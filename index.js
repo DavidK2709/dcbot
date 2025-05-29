@@ -1,8 +1,9 @@
+require('dotenv').config();
 const { Client } = require('discord.js-selfbot-v13');
 const client = new Client();
 
 // === CONFIG ===
-const USER_TOKEN = 'MTM3NzM2MDM0OTE5MTIxMzIyNg.G3_i_4.3OyrhgQMb1b8IQwO3tVfX58alWcn4CXs8ZN7Bg';
+const USER_TOKEN = process.env.DISCORD_TOKEN;
 const ALLOWED_GUILD = '893588861744201779';
 const ALLOWED_CHANNEL = '1376936775762841691';
 const ALLOWED_CATEGORY_ID = '1376937159939981393';
