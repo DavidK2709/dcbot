@@ -9,17 +9,24 @@ const ALLOWED_CATEGORY_ID = process.env.ALLOWED_CATEGORY_ID;
 const TRIGGER_CHANNEL_ID = process.env.TRIGGER_CHANNEL_ID;
 const BOT_USER_ID = process.env.BOT_USER_ID;
 
+
 // === Login ===
 client.on('ready', () => {
   console.log(`Eingeloggt als ${client.user.tag}`);
+  console.log('TRIGGER_CHANNEL_ID:' + TRIGGER_CHANNEL_ID);
+  console.log('BOT_USER_ID:' + BOT_USER_ID);
 });
 
 client.on('message', (message) => {
+
   const targetUserId = '1376941250799997059';
-
-  if (message.channel.id !== TRIGGER_CHANNEL_ID) return;
-  if (message.author.id !== BOT_USER_ID) return;
-
+  if (message.channel.id !== TRIGGER_CHANNEL_ID){
+	return;
+  };
+  if (message.author.id !== BOT_USER_ID) {
+	return;
+}
+  
   const lines = message.content.split('\n').map(line => line.trim());
 
   const data = {
@@ -31,22 +38,18 @@ client.on('message', (message) => {
   };
 
   lines.forEach(line => {
-    if (line.toLowerCase().startsWith('abteilung:')) {
-      data.abteilung = line.split(':')[1].trim();
-    }
-    if (line.toLowerCase().startsWith('grund:')) {
-      data.grund = line.split(':')[1].trim();
-    }
-    if (line.toLowerCase().startsWith('patient:')) {
-      data.patient = line.split(':')[1].trim();
-    }
-    if (line.toLowerCase().startsWith('telefon:')) {
-      data.telefon = line.split(':')[1].trim();
-    }
-    if (line.toLowerCase().startsWith('sonstiges:')) {
-      data.sonstiges = line.split(':')[1].trim();
+    const match = line.match(/>\s\*\*(.+?):\*\*\s(.+)/);
+    if (match) {
+      const key = match[1].toLowerCase();
+      const value = match[2].trim();
+      if (data.hasOwnProperty(key)) {
+        data[key] = value;
+      }
     }
   });
+
+  const jsonData = JSON.stringify(data, null, 2);
+  message.channel.send(`\`\`\`json\n${jsonData}\n\`\`\``);	
 
   console.log('Gefundene Daten:', data);
 });
@@ -55,8 +58,7 @@ client.on('message', (message) => {
 // === Neuer Ticket-Channel in Kategorie ===
 client.on('channelCreate', (channel) => {
   if (channel.parentId === ALLOWED_CATEGORY_ID) {
-    console.log(`📁 Neuer Ticket-Channel: ${channel.name} (${channel.id})`);
-
+    console.log(`Neuer Ticket-Channel: ${channel.name} (${channel.id})`);
     setTimeout(async () => {
       try {
         const messages = await channel.messages.fetch({ limit: 10 });
