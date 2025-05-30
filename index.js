@@ -5,8 +5,7 @@ const { Client: BotClient, GatewayIntentBits: BotIntents, EmbedBuilder } = requi
 const userbot = new Client();
 
 const bot = new BotClient({
-  intents: [BotIntents.Guilds, BotIntents.GuildMessages, BotIntents.MessageContent],
-  partials: [Partials.Channel]
+  intents: [BotIntents.Guilds, BotIntents.GuildMessages, BotIntents.MessageContent]
 });
 
 // === CONFIG ===
