@@ -3,13 +3,14 @@
   "version": "1.0.0",
   "main": "index.js",
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "echo \"Keine Testscripts angelegt\" && exit 1"
   },
   "keywords": [],
-  "author": "",
+  "author": "David Koch",
   "license": "ISC",
-  "description": "",
+  "description": "Ticketmanagment für Discord - Krankenhaus Dortmund - ImmortalV",
   "dependencies": {
+    "discord.js": "^14.19.3",
     "discord.js-selfbot-v13": "^3.6.1",
     "dotenv": "^16.5.0"
   }
