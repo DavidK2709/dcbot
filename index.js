@@ -4,28 +4,53 @@ const client = new Client();
 
 // === CONFIG ===
 const USER_TOKEN = process.env.DISCORD_TOKEN;
-const ALLOWED_GUILD = '893588861744201779';
-const ALLOWED_CHANNEL = '1376936775762841691';
-const ALLOWED_CATEGORY_ID = '1376937159939981393';
+const ALLOWED_GUILD = process.env.ALLOWED_GUILD;
+const ALLOWED_CATEGORY_ID = process.env.ALLOWED_CATEGORY_ID;
+const TRIGGER_CHANNEL_ID = process.env.TRIGGER_CHANNEL_ID;
+const BOT_USER_ID = process.env.BOT_USER_ID;
 
 // === Login ===
 client.on('ready', () => {
   console.log(`Eingeloggt als ${client.user.tag}`);
 });
 
-// === Trigger "arbeitsmedizin" ===
-client.on('messageCreate', (message) => {
-  if (!message.guild || message.author.id === client.user.id || message.author.bot) return;
+client.on('message', (message) => {
+  const targetUserId = '1376941250799997059';
 
-  if (
-    message.guild.id === ALLOWED_GUILD &&
-    message.channel.id === ALLOWED_CHANNEL &&
-    message.content.toLowerCase().includes('arbeitsmedizin')
-  ) {
-    console.log(`Trigger erkannt von ${message.author.username}: ${message.content}`);
-    message.channel.send('$ticket');
-  }
+  if (message.channel.id !== TRIGGER_CHANNEL_ID) return;
+  if (message.author.id !== BOT_USER_ID) return;
+
+  const lines = message.content.split('\n').map(line => line.trim());
+
+  const data = {
+    abteilung: '',
+    grund: '',
+    patient: '',
+    telefon: '',
+    sonstiges: ''
+  };
+
+  lines.forEach(line => {
+    if (line.toLowerCase().startsWith('abteilung:')) {
+      data.abteilung = line.split(':')[1].trim();
+    }
+    if (line.toLowerCase().startsWith('grund:')) {
+      data.grund = line.split(':')[1].trim();
+    }
+    if (line.toLowerCase().startsWith('patient:')) {
+      data.patient = line.split(':')[1].trim();
+    }
+    if (line.toLowerCase().startsWith('telefon:')) {
+      data.telefon = line.split(':')[1].trim();
+    }
+    if (line.toLowerCase().startsWith('sonstiges:')) {
+      data.sonstiges = line.split(':')[1].trim();
+    }
+  });
+
+  console.log('Gefundene Daten:', data);
 });
+
 
 // === Neuer Ticket-Channel in Kategorie ===
 client.on('channelCreate', (channel) => {
