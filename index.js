@@ -207,10 +207,10 @@ bot.on('channelCreate', async (channel) => {
 
       const rolePing = data.abteilung && data.abteilung.match(/<@&\d+>/) ? data.abteilung : null;
 
-      if(content != null){
-        const content = `${rolePing} eine neue Behandlungsanfrage.`;
+      if(rolePing != null){
+         const content = `${rolePing} eine neue Behandlungsanfrage.`;
       } else {
-        const content = 'Eine neue Behandlungsanfrage.';
+         const content = 'Eine neue Behandlungsanfrage.';
       }
 
 
