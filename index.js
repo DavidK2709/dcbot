@@ -60,14 +60,14 @@ userbot.on('messageCreate', async (message) => {
     const ticketName = `{${data.grund}_${data.patient}}`;
     try {
       await message.channel.send(`$ticket ${ticketName}`);
-      console.log(`Ticket-Befehl gesendet: $ticket ${ticketName}`);
+      console.log(`(Userbot)Befehl gesendet: $ticket ${ticketName}`);
 
       ticketDataStore.set(message.id, data);
     } catch (err) {
-      console.error('Fehler beim Erstellen des Tickets:', err);
+      console.error('(Userbot)Fehler beim Erstellen eines Tickets:', err);
     }
   } else {
-    console.log('Fehler: Grund oder Patient fehlt');
+    console.log('(Userbot)Fehler beim Erstellen eines Tickets: Grund oder Patient fehlt');
   }
 });
 
@@ -75,7 +75,7 @@ userbot.on('messageCreate', async (message) => {
 userbot.on('channelCreate', async (channel) => {
   if (channel.parentId !== ALLOWED_CATEGORY_ID) return;
 
-  console.log(`Neuer Ticket-Kanal: ${channel.name} (${channel.id})`);
+  console.log(`(Userbot)Ticket-Kanal erkannt: ${channel.name} (${channel.id})`);
 
   setTimeout(async () => {
     try {
@@ -86,35 +86,34 @@ userbot.on('channelCreate', async (channel) => {
             const messages = await channel.messages.fetch({ limit: 10 });
             const guild = channel.guild;
             if (!guild) {
-              console.error('Fehler: Guild nicht verfügbar');
+              console.error('(Userbot)Fehler: Guild nicht verfügbar');
               return;
             }
 
             const sorted = messages.sort((a, b) => a.createdTimestamp - b.createdTimestamp);
             const ticket_user_first_message = messages.first();
             if (!ticket_user_first_message) {
-              console.log('Keine Nachrichten im Kanal gefunden');
+              console.log('(Userbot)Keine Nachrichten im Kanal gefunden');
               return;
             }
 
             const ticket_user_id_match = ticket_user_first_message.content.match(/<@&(\d+)>/);
             const ticket_user_id = ticket_user_id_match ? ticket_user_id_match[1] : null;
-            console.log('Ticket Rollen-ID:', ticket_user_id);
+            console.log('(Userbot)Ticket Rollen-ID:', ticket_user_id);
 
             if (!ticket_user_id) {
-              console.log('Keine Rollen-ID in der ersten Nachricht gefunden');
+              console.log('(Userbot)Keine Rollen-ID in der ersten Nachricht gefunden');
               return;
             }
 
             const role = guild.roles.cache.get(ticket_user_id);
             const ticket_user_desc = role ? role.name.replace(/\s+/g, '-') : null;
-            console.log('Rollenname:', ticket_user_desc);
+            console.log('(Userbot)Rollenname:', ticket_user_desc);
 
             for (const msg of sorted.values()) {
               if (msg.embeds.length > 0) {
                 msg.embeds.forEach(embed => {
                   if (!embed.description) {
-                    console.log('Kein description, skip');
                     return;
                   }
 
@@ -124,28 +123,25 @@ userbot.on('channelCreate', async (channel) => {
 
                   const patient = patientMatch ? patientMatch[1].trim() : null;
                   const concern = concernMatch ? concernMatch[1].trim() : null;
-                  console.log('Patient und Anliegen geloggt: ');
-                  console.log('Patient:', patient);
-                  console.log('Concern:', concern);
 
                   if (patient && concern) {
                     const allowedpatient = patient.replace(/[, ]/g, '');
                     const allowedconcern = concern.replace(/[, ]/g, '');
 
                     const renameCommand = `$rename ticket_${ticket_user_desc}_${allowedconcern}_${allowedpatient}`;
-                    console.log(`Renaming Channel mit: ${renameCommand}`);
+                    console.log(`(Userbot)Renaming Channel mit: ${renameCommand}`);
                     channel.send(renameCommand);
                   } else {
-                    console.log('Patient oder Anliegen Fehlerhaft');
-                    console.log('Patient:', patient);
-                    console.log('Concern:', concern);
+                    console.log('(Userbot)Patient oder Anliegen Fehlerhaft');
+                    console.log('(Userbot)Patient:', patient);
+                    console.log('(Userbot)Concern:', concern);
                   }
                 });
               }
             }
 
           } catch (err) {
-            console.error('Fehler beim Auslesen & Umbenennen:', err);
+            console.error('(Userbot)Fehler beim Auslesen & Umbenennen eines Tickets:', err);
           }
         }, 3000);
         return;
@@ -156,44 +152,43 @@ userbot.on('channelCreate', async (channel) => {
 
       if (bereinigteID) {
         await channel.send(`$add ${bereinigteID}`);
-        console.log(`Benutzer hinzugefügt: $add ${bereinigteID}`);
+        console.log(`(Userbot)Benutzer hinzugefügt: $add ${bereinigteID}`);
       } else {
-        console.log('Fehler: Ungültige oder fehlende Benutzer-ID in data.abteilung:', bereinigteID);
+        console.log('(Userbot)Fehler: Ungültige oder fehlende Benutzer-ID in data.abteilung:', bereinigteID);
       }
 
       setTimeout(async () => {
         try {
           if (data.grund) {
             await channel.send(`$rename ${data.grund}`);
-            console.log(`Ticket umbenannt: $rename ${data.grund}`);
+            console.log(`(Userbot)Ticket umbenannt: $rename ${data.grund}`);
           } else {
-            console.log('Fehler: Kein grund für Umbenennung vorhanden.');
+            console.log('(Userbot)Fehler: Kein Ggrund für Umbenennung vorhanden.');
           }
         } catch (err) {
-          console.error('Fehler beim Umbenennen:', err);
+          console.error('(Userbot)Fehler beim Umbenennen:', err);
         }
       }, 2000); // 2 Sekunden Verzögerung nach $add
     } catch (err) {
-      console.error('Fehler beim Hinzufügen:', err);
+      console.error('(Userbot)Fehler beim Hinzufügen:', err);
     }
   }, 3000);
 });
 
 // === Richtiger Bot: Embed in neuem Ticket-Kanal senden ===
 bot.on('ready', () => {
-  console.log(`Richtiger Bot eingeloggt als ${bot.user.tag}`);
+  console.log(`(Bot)Bot eingeloggt als ${bot.user.tag}`);
 });
 
 bot.on('channelCreate', async (channel) => {
   if (channel.parentId !== ALLOWED_CATEGORY_ID) return;
 
-  console.log(`Neuer Ticket-Kanal (Bot): ${channel.name} (${channel.id})`);
+  console.log(`(Bot)Neuer Ticket-Kanal: ${channel.name} (${channel.id})`);
 
   setTimeout(async () => {
     try {
       const latestTicketData = Array.from(ticketDataStore.entries()).pop();
       if (!latestTicketData) {
-        console.log('Bot: Erstelle kein Embedded, da Userticket.');
         return;
       }
       const ticketReasons = {
@@ -205,14 +200,7 @@ bot.on('channelCreate', async (channel) => {
 
       const [, data] = latestTicketData;
 
-      const rolePing = data.abteilung && data.abteilung.match(/<@&\d+>/) ? data.abteilung : null;
-
-      if(rolePing != null){
-         const content = `${rolePing} eine neue Behandlungsanfrage.`;
-      } else {
-         const content = 'Eine neue Behandlungsanfrage.';
-      }
-
+      const content = "Eine neues Ticket für: " + ticketReasons[data.grund] + ". (" + data.abteilung + ")";
 
       const embed = new EmbedBuilder()
           .setTitle(ticketReasons[data.grund]  ||  'Neues Ticket')
@@ -223,14 +211,14 @@ bot.on('channelCreate', async (channel) => {
           )
           .setColor(0x480007);
 
-      await channel.send({content, embeds: [embed] });
+      await channel.send({content: content, embeds: [embed] });
 
-      console.log(`Embed in Kanal ${channel.id} gesendet.`);
+      console.log(`(Bot)Embed in Kanal ${channel.id} gesendet.`);
 
       // Daten aus dem Store entfernen, nachdem das Embed gesendet wurde
       ticketDataStore.delete(latestTicketData[0]);
     } catch (err) {
-      console.error('Fehler beim Senden des Embeds:', err);
+      console.error('(Bot) Fehler beim Senden des Embeds:', err);
     }
   }, 7000);
 });
@@ -238,5 +226,13 @@ bot.on('channelCreate', async (channel) => {
 // === Start ===
 console.log('USER_TOKEN:', USER_TOKEN ? 'Geladen' : 'Nicht definiert');
 console.log('BOT_TOKEN:', BOT_TOKEN ? 'Geladen' : 'Nicht definiert');
-userbot.login(USER_TOKEN).catch(err => console.error('Userbot Login Fehler:', err));
-bot.login(BOT_TOKEN).catch(err => console.error('Bot Login Fehler:', err));
+console.log('BOT_USER_ID:', ALLOWED_CATEGORY_ID ? 'Geladen' : 'Nicht definiert');
+console.log('ALLWOED_GUILD:', ALLOWED_GUILD ? 'Geladen' : 'Nicht definiert');
+console.log('ALLOWED_CATEGORY_ID:', ALLOWED_CATEGORY_ID ? 'Geladen' : 'Nicht definiert');
+console.log('TRIGGER_CHANNEL_ID:', ALLOWED_CATEGORY_ID ? 'Geladen' : 'Nicht definiert');
+
+userbot.login(USER_TOKEN).catch(err => console.error('(Userbot) Login Fehler:', err));
+bot.login(BOT_TOKEN).catch(err => console.error('(Bot) Login Fehler:', err));
+
+
+
