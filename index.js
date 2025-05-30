@@ -205,6 +205,15 @@ bot.on('channelCreate', async (channel) => {
 
       const [, data] = latestTicketData;
 
+      const rolePing = data.abteilung && data.abteilung.match(/<@&\d+>/) ? data.abteilung : null;
+
+      if(content != null){
+        const content = `${rolePing} eine neue Behandlungsanfrage.`;
+      } else {
+        const content = 'Eine neue Behandlungsanfrage.';
+      }
+
+
       const embed = new EmbedBuilder()
           .setTitle(ticketReasons[data.grund]  ||  'Neues Ticket')
           .addFields(
@@ -214,7 +223,8 @@ bot.on('channelCreate', async (channel) => {
           )
           .setColor(0x480007);
 
-      await channel.send({ embeds: [embed] });
+      await channel.send({content, embeds: [embed] });
+
       console.log(`Embed in Kanal ${channel.id} gesendet.`);
 
       // Daten aus dem Store entfernen, nachdem das Embed gesendet wurde
