@@ -1,6 +1,13 @@
 require('dotenv').config();
-const { Client } = require('discord.js-selfbot-v13');
-const client = new Client();
+const { Client, GatewayIntentBits, Partials, Events, MessageEmbed } = require("discord.js-selfbot-v13");
+const { Client: BotClient, GatewayIntentBits: BotIntents, EmbedBuilder } = require("discord.js");
+
+const userbot = new Client();
+
+const bot = new BotClient({
+  intents: [BotIntents.Guilds, BotIntents.GuildMessages, BotIntents.MessageContent],
+  partials: [Partials.Channel]
+});
 
 // === CONFIG ===
 const USER_TOKEN = process.env.DISCORD_TOKEN;
@@ -8,16 +15,17 @@ const ALLOWED_GUILD = process.env.ALLOWED_GUILD;
 const ALLOWED_CATEGORY_ID = process.env.ALLOWED_CATEGORY_ID;
 const TRIGGER_CHANNEL_ID = process.env.TRIGGER_CHANNEL_ID;
 const BOT_USER_ID = process.env.BOT_USER_ID;
+const BOT_TOKEN = process.env.BOT_TOKEN;
 
 
-// === Login ===
-client.on('ready', () => {
-  console.log(`Eingeloggt als ${client.user.tag}`);
+// === Login Userbot===
+userbot.on('ready', () => {
+  console.log(`Eingeloggt als ${userbot.user.tag}`);
   console.log('TRIGGER_CHANNEL_ID:' + TRIGGER_CHANNEL_ID);
   console.log('BOT_USER_ID:' + BOT_USER_ID);
 });
 
-client.on('message', (message) => {
+userbot.on('message', (message) => {
 
   const targetUserId = '1376941250799997059';
   if (message.channel.id !== TRIGGER_CHANNEL_ID){
@@ -48,15 +56,14 @@ client.on('message', (message) => {
     }
   });
 
-  const jsonData = JSON.stringify(data, null, 2);
-  message.channel.send(`\`\`\`json\n${jsonData}\n\`\`\``);	
+  sendEmbedMessage(data);
 
   console.log('Gefundene Daten:', data);
 });
 
 
 // === Neuer Ticket-Channel in Kategorie ===
-client.on('channelCreate', (channel) => {
+userbot.on('channelCreate', (channel) => {
   if (channel.parentId === ALLOWED_CATEGORY_ID) {
     console.log(`Neuer Ticket-Channel: ${channel.name} (${channel.id})`);
     setTimeout(async () => {
@@ -91,5 +98,34 @@ client.on('channelCreate', (channel) => {
 });
 
 // === Start ===
-client.login(USER_TOKEN);
+userbot.login(USER_TOKEN);
+
+
+// === Richtiger Bot ===
+bot.on("ready", () => {
+  console.log(`Richtiger Bot eingeloggt als ${bot.user.tag}`);
+});
+
+async function sendEmbedMessage(daten) {
+  try {
+    const channel = await bot.channels.fetch(TRIGGER_CHANNEL_ID);
+
+    const embed = new EmbedBuilder()
+        .setTitle("Neues Ticket")
+        .addFields(
+            { name: "Patientenname", value: daten.patientenname || "Keine Angabe", inline: false },
+            { name: "Anliegen", value: daten.anliegen || "Keine Angabe", inline: false },
+            { name: "Aktivitätszeit", value: daten.aktivitätszeit || "Keine Angabe", inline: false },
+            { name: "Telefonnummer für Rückfragen", value: daten.telefonnummer || "Keine Angabe", inline: false }
+        )
+        .setColor(0x2b2d31);
+
+    await channel.send({ embeds: [embed] });
+    console.log("Embed gesendet!");
+  } catch (err) {
+    console.error("Fehler beim Embed-Senden:", err);
+  }
+}
+
+bot.login(process.env.BOT_TOKEN);
 
