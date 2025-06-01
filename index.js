@@ -326,7 +326,9 @@ bot.on('channelCreate', async (channel) => {
         ticket_arbeitsmedizinisches_polizei: 'Arbeitsmedizinisches Gutachten Polizeibewerber',
         ticket_arbeitsmedizinisches_jva: 'Arbeitsmedizinisches Gutachten JVA/Wachschutz',
         ticket_arbeitsmedizinisches_ammunation: 'Arbeitsmedizinisches Gutachten Ammunation',
-        ticket_arbeitsmedizinisches_mediziner: 'Arbeitsmedizinisches Gutachten Mediziner'
+        ticket_arbeitsmedizinisches_mediziner: 'Arbeitsmedizinisches Gutachten Mediziner',
+        ticket_psycholgie_bundeswehr: 'Psychologisches Gutachten Bundeswehr',
+        ticket_psychologie_jva: 'Psychologisches Gutachten JVA',
       };
 
       const isAutomaticTicket = Object.keys(ticketReasons).includes(data.grund);
