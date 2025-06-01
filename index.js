@@ -181,7 +181,6 @@ userbot.on('channelCreate', async (channel) => {
 
   setTimeout(async () => {
     try {
-      // Hole die Nachrichten im Kanal (max. 10)
       const messages = await channel.messages.fetch({ limit: 10 });
       const firstMessage = messages.first();
 
@@ -200,9 +199,8 @@ userbot.on('channelCreate', async (channel) => {
         appointmentCompleted: false, isClosed: false, lastReset: false
       };
 
-      // Prüfe, ob es ein manuelles Ticket ist (Nachricht von TICKET_TOOL_BOT_ID mit gültigem Embed)
       let isManualTicket = false;
-      let cleanAbteilung = 'Nicht angegeben'; // Für manuelle Tickets
+      let cleanAbteilung = 'Nicht angegeben';
       if (firstMessage.author.id === TICKET_TOOL_BOT_ID) {
         const embed = firstMessage.embeds.find(e => e.description);
         if (embed && embed.description) {
@@ -216,7 +214,6 @@ userbot.on('channelCreate', async (channel) => {
             data.sonstiges = desc.match(/\*\*Aktivitätszeiten:\*\* ```\s*([\s\S]*?)```/)?.[1].trim() || 'Nicht angegeben';
             data.telefon = desc.match(/\*\*Telfonnummer für Rückfragen:\*\* ```\s*([\s\S]*?)```/)?.[1].trim() || 'Nicht angegeben';
 
-            // Extrahiere Rollenname und Ping
             const roleIdMatch = firstMessage.content.match(/<@&(\d+)>/);
             const roleId = roleIdMatch ? roleIdMatch[1] : null;
             if (roleId) {
@@ -238,7 +235,6 @@ userbot.on('channelCreate', async (channel) => {
         }
       }
 
-      // Automatisches Ticket: Verwende ticketDataStore-Daten
       if (!isManualTicket) {
         const latestTicketData = Array.from(ticketDataStore.entries())
             .reverse()
@@ -249,7 +245,6 @@ userbot.on('channelCreate', async (channel) => {
         }
         Object.assign(data, latestTicketData[1]);
 
-        // Setze Abteilung als Ping
         if (data.abteilungPing && data.abteilungPing !== 'Nicht angegeben') {
           const roleIdMatch = data.abteilungPing.match(/<@&(\d+)>/);
           const roleId = roleIdMatch ? roleIdMatch[1] : null;
@@ -269,7 +264,6 @@ userbot.on('channelCreate', async (channel) => {
         console.log(`(Userbot) Automatische Ticket-Daten geladen für Kanal ${channel.name} (${channel.id})`, data);
       }
 
-      // Benutzer hinzufügen
       let roleId = null;
       if (isManualTicket) {
         const roleIdMatch = firstMessage.content.match(/<@&(\d+)>/);
@@ -283,7 +277,6 @@ userbot.on('channelCreate', async (channel) => {
         console.log(`(Userbot) Rolle hinzugefügt: $add ${roleId} in Kanal ${channel.name} (${channel.id})`);
       }
 
-      // Ticket umbenennen
       setTimeout(async () => {
         try {
           if (data.patient) {
@@ -295,7 +288,6 @@ userbot.on('channelCreate', async (channel) => {
             console.log(`(Userbot) Ticket umbenannt: ${ticketName} in Kanal ${channel.name} (${channel.id})`);
           }
 
-          // Lösche Ticket-Tool-Nachrichten
           const messages = await channel.messages.fetch({ limit: 10 });
           const ticketToolMessages = messages.filter(msg => msg.author.id === TICKET_TOOL_BOT_ID).first(2);
 
@@ -306,11 +298,11 @@ userbot.on('channelCreate', async (channel) => {
         } catch (err) {
           console.error(`(Userbot) Fehler beim Umbenennen/Löschen in Kanal ${channel.name} (${channel.id}):`, err);
         }
-      }, 2000);
+      }, 1000); // Reduziert von 2000 ms auf 1000 ms
     } catch (err) {
       console.error(`(Userbot) Fehler beim Verarbeiten des Kanals ${channel.name} (${channel.id}):`, err);
     }
-  }, 3000);
+  }, 1000); // Reduziert von 3000 ms auf 1000 ms
 });
 
 // === Bot: Embed und Buttons in neuem Ticket-Kanal ===
@@ -337,13 +329,11 @@ bot.on('channelCreate', async (channel) => {
         ticket_arbeitsmedizinisches_mediziner: 'Arbeitsmedizinisches Gutachten Mediziner'
       };
 
-      // Prüfe, ob es ein automatisches Ticket ist
       const isAutomaticTicket = Object.keys(ticketReasons).includes(data.grund);
       const embedTitle = isAutomaticTicket
           ? `Behandlungsanfrage für ${ticketReasons[data.grund] || data.grund}`
           : `Behandlungsanfrage für ${data.abteilung.replace(/<@&(\d+)>/, 'Abteilung')}`;
 
-      // Felder ohne inline, damit sie untereinander angezeigt werden
       const fields = [
         { name: 'Abteilung', value: data.abteilungPing || 'Nicht angegeben', inline: false },
         { name: 'Grund', value: isAutomaticTicket ? ticketReasons[data.grund] || data.grund : data.grund || 'Nicht angegeben', inline: false },
@@ -369,7 +359,7 @@ bot.on('channelCreate', async (channel) => {
     } catch (err) {
       console.error(`(Bot) Fehler beim Senden des Embeds in Kanal ${channel.name} (${channel.id}):`, err);
     }
-  }, 7000);
+  }, 7000); // Bleibt bei 7000 ms, da es wichtig ist, dass der Kanal vollständig erstellt ist
 });
 
 // === Interaction Handlers ===
@@ -381,10 +371,11 @@ bot.on('interactionCreate', async (interaction) => {
     ticket_arbeitsmedizinisches_polizei: 'Arbeitsmedizinisches Gutachten Polizeibewerber',
     ticket_arbeitsmedizinisches_jva: 'Arbeitsmedizinisches Gutachten JVA/Wachschutz',
     ticket_arbeitsmedizinisches_ammunation: 'Arbeitsmedizinisches Gutachten Ammunation',
-    ticket_arbeitsmedizinisches_mediziner: 'Arbeitsmedizinisches Gutachten Mediziner'
+    ticket_arbeitsmedizinisches_mediziner: 'Arbeitsmedizinisches Gutachten Mediziner',
+    ticket_psycholgie_bundeswehr: 'Psychologisches Gutachten Bundeswehr',
+    ticket_psychologie_jva: 'Psychologisches Gutachten JVA',
   };
 
-  // Button: Ticket vergeben
   if (interaction.isButton() && interaction.customId === 'takeover_ticket_button') {
     try {
       const modal = new ModalBuilder()
@@ -408,7 +399,6 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Modal-Submit: Benutzerübernahme
   if (interaction.isModalSubmit() && interaction.customId === 'takeover_user_modal') {
     try {
       await interaction.deferUpdate();
@@ -442,7 +432,7 @@ bot.on('interactionCreate', async (interaction) => {
 
       ticketData.acceptedBy = selectedUser;
       ticketData.nickname = nickname;
-      ticketData.lastReset = false; // Reset-Status zurücksetzen, da eine neue Interaktion erfolgt ist
+      ticketData.lastReset = false;
       const currentEmbed = embedMessage.embeds[0];
       const updatedEmbed = new EmbedBuilder()
           .setTitle(currentEmbed.title)
@@ -461,14 +451,13 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Button: Versucht anzurufen
   if (interaction.isButton() && interaction.customId === 'call_attempt_button') {
     try {
       const timestamp = getTimestamp();
       await interaction.channel.send(`[${timestamp}] ${interaction.user} hat versucht anzurufen.`);
       const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
       if (ticketData) {
-        ticketData.lastReset = false; // Reset-Status zurücksetzen, da eine neue Interaktion erfolgt ist
+        ticketData.lastReset = false;
         const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
         await embedMessage.edit({ embeds: [embedMessage.embeds[0]], components: getButtonRows(ticketData) });
       }
@@ -479,7 +468,6 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Button: Termin festlegen
   if (interaction.isButton() && interaction.customId === 'schedule_appointment_button') {
     try {
       const modal = new ModalBuilder()
@@ -509,10 +497,8 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Button: Schließen (direktes Schließen ohne Bestätigung)
   if (interaction.isButton() && interaction.customId === 'close_ticket_button') {
     try {
-      // Sende den $close Befehl
       await userbot.channels.cache.get(interaction.channel.id).send('$close');
       console.log(`(Bot) $close Befehl gesendet in Kanal ${channelName} (${channelId}) von ${userTag}`);
 
@@ -529,11 +515,9 @@ bot.on('interactionCreate', async (interaction) => {
         }
       }
 
-      // Sende die normale Bestätigungsnachricht
       await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat das Ticket geschlossen.`);
       console.log(`(Bot) Normale Bestätigungsnachricht gesendet in Kanal ${channelName} (${channelId})`);
 
-      // Cleanup nach 10 Sekunden
       setTimeout(async () => {
         try {
           if (!ticketData || !ticketData.embedMessageId || !TICKET_TOOL_BOT_ID) {
@@ -543,10 +527,7 @@ bot.on('interactionCreate', async (interaction) => {
 
           console.log(`(Bot) Cleanup gestartet.`);
 
-          // Hole die Nachrichten im Channel (max. 100)
           const messages = await interaction.channel.messages.fetch({ limit: 100 });
-
-          // Filtere alle Nachrichten von TICKET_TOOL_BOT_ID
           const ticketToolMessages = messages.filter(msg => {
             const isTicketTool = msg.author.id === TICKET_TOOL_BOT_ID;
             const isNotCreatorEmbed = msg.author.id !== TICKET_CREATOR_BOT_ID;
@@ -557,7 +538,6 @@ bot.on('interactionCreate', async (interaction) => {
           console.log(`(Bot) Gefundene Nachrichten von TICKET_TOOL_BOT_ID: ${ticketToolMessages.size} in Kanal ${channelName} (${channelId})`);
           console.log(`→ Zu löschende IDs: ${ticketToolMessages.map(m => m.id).join(', ')}`);
 
-          // Lösche die gefilterten Nachrichten
           for (const msg of ticketToolMessages.values()) {
             try {
               await msg.delete();
@@ -569,7 +549,7 @@ bot.on('interactionCreate', async (interaction) => {
         } catch (err) {
           console.error(`(Bot) Fehler beim Laden oder Löschen von TICKET_TOOL Nachrichten in Kanal ${channelName} (${channelId}):`, err);
         }
-      }, 10000);
+      }, 5000); // Reduziert von 10000 ms auf 5000 ms
 
       console.log(`(Bot) Ticket geschlossen in Kanal ${channelName} (${channelId}) von ${userTag}`);
     } catch (err) {
@@ -578,12 +558,10 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Button: Ticket wieder öffnen
   if (interaction.isButton() && interaction.customId === 'reopen_ticket_button') {
     try {
       console.log(`(Bot) Verarbeitung für Interaktion in Kanal ${channelName} (${channelId}) von ${userTag}`);
 
-      // Prüfe, ob die Nachricht noch existiert, bevor wir etwas tun
       const originalMessageId = interaction.message.id;
       try {
         await interaction.channel.messages.fetch(originalMessageId);
@@ -592,30 +570,25 @@ bot.on('interactionCreate', async (interaction) => {
         console.error(`(Bot) Nachricht ${originalMessageId} existiert nicht mehr vor der Aktion:`, err);
       }
 
-      // Sende den $open Befehl
       await userbot.channels.cache.get(interaction.channel.id).send('$open');
       console.log(`(Bot) $open Befehl gesendet in Kanal ${channelName} (${channelId}) von ${userTag}`);
 
-      // Sende die Benachrichtigung
       await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat das Ticket wieder geöffnet.`);
 
-      // Finde das entsprechende ticketData
       const ticketData = Array.from(ticketDataStore.entries())
           .find(([_, data]) => data.embedMessageId === originalMessageId)?.[1];
       if (ticketData) {
-        ticketData.isClosed = false; // Setze das Ticket auf "offen"
-        const updatedComponents = getButtonRows(ticketData); // Hole die neuen Buttons
+        ticketData.isClosed = false;
+        const updatedComponents = getButtonRows(ticketData);
         await interaction.message.edit({ components: updatedComponents });
         console.log(`(Bot) Buttons aktualisiert für Nachricht ${originalMessageId} in Kanal ${channelName} (${channelId})`);
       } else {
         console.warn(`(Bot) Kein ticketData für Nachricht ${originalMessageId} gefunden in Kanal ${channelName} (${channelId})`);
       }
 
-      // Teste mit deferReply statt deferUpdate
       await interaction.deferReply({ ephemeral: true });
       await interaction.followUp({ content: 'Ticket erfolgreich wieder geöffnet.', ephemeral: true });
 
-      // Cleanup nach 8 Sekunden
       setTimeout(async () => {
         try {
           if (!ticketData || !ticketData.embedMessageId || !TICKET_TOOL_BOT_ID) {
@@ -623,21 +596,17 @@ bot.on('interactionCreate', async (interaction) => {
             return;
           }
 
-          // Hole die Nachrichten im Channel (max. 100)
           const messages = await interaction.channel.messages.fetch({ limit: 100 });
-
-          // Filtere alle Nachrichten von TICKET_TOOL_BOT_ID
           const ticketToolMessages = messages.filter(msg => {
             const isTicketTool = msg.author.id === TICKET_TOOL_BOT_ID;
             const isNotCreatorEmbed = msg.author.id !== TICKET_CREATOR_BOT_ID;
-            const isNotEmbedMsg = msg.id !== ticketData.embedMessageId; // Schütze die Haupt-Embed-Nachricht
+            const isNotEmbedMsg = msg.id !== ticketData.embedMessageId;
             return isTicketTool && isNotCreatorEmbed && isNotEmbedMsg;
           });
 
           console.log(`(Bot) Gefundene Nachrichten von TICKET_TOOL_BOT_ID: ${ticketToolMessages.size} in Kanal ${channelName} (${channelId})`);
           console.log(`→ Zu löschende IDs: ${ticketToolMessages.map(m => m.id).join(', ')}`);
 
-          // Lösche die gefilterten Nachrichten
           for (const msg of ticketToolMessages.values()) {
             try {
               await msg.delete();
@@ -649,30 +618,27 @@ bot.on('interactionCreate', async (interaction) => {
         } catch (err) {
           console.error(`(Bot) Fehler beim Laden oder Löschen von TICKET_TOOL Nachrichten in Kanal ${channelName} (${channelId}):`, err);
         }
-      }, 6000);
+      }, 5000); // Reduziert von 6000 ms auf 5000 ms
 
-      // Lösche die ephemeral Reply nach 5 Sekunden
       setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
       console.log(`(Bot) Benachrichtigung gesendet in Kanal ${channelName} (${channelId}) von ${userTag}`);
     } catch (err) {
       console.error(`(Bot) Fehler beim Wiederöffnen in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-      await interaction.followUp({ content: 'Fehler beim Wiederöffnen des Tickets: ' + err.message, ephemeral: true }).catch(() => {});
+      await interaction.followUp({ content: 'Fehler beim Wiederöffnen des Tickets.', ephemeral: true }).catch(() => {});
     }
   }
 
-  // Button: Ticket zurücksetzen
   if (interaction.isButton() && interaction.customId === 'reset_ticket_button') {
     try {
       const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
       if (ticketData && ticketData.embedMessageId) {
-        // Zurücksetzen der Interaktionen
         ticketData.acceptedBy = null;
         ticketData.nickname = null;
         ticketData.appointmentDate = null;
         ticketData.appointmentTime = null;
         ticketData.appointmentCompleted = false;
         ticketData.avpsLink = null;
-        ticketData.lastReset = true; // Setze lastReset auf true, um weiteren Reset zu verhindern
+        ticketData.lastReset = true;
 
         const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
         const currentEmbed = embedMessage.embeds[0];
@@ -683,7 +649,6 @@ bot.on('interactionCreate', async (interaction) => {
         await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
         console.log(`(Bot) Embed zurückgesetzt in Nachricht ${ticketData.embedMessageId} in Kanal ${channelName} (${channelId})`);
 
-        // Nachricht mit durchgezogenem Strich senden
         await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat das Ticket zurückgesetzt.\n──────────────────────────`);
       }
 
@@ -695,7 +660,6 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Button: Nicht zum Termin erschienen
   if (interaction.isButton() && interaction.customId === 'no_show_button') {
     try {
       const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
@@ -703,7 +667,7 @@ bot.on('interactionCreate', async (interaction) => {
         ticketData.appointmentDate = null;
         ticketData.appointmentTime = null;
         ticketData.appointmentCompleted = false;
-        ticketData.lastReset = false; // Reset-Status zurücksetzen, da eine neue Interaktion erfolgt ist
+        ticketData.lastReset = false;
         const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
         const currentEmbed = embedMessage.embeds[0];
         const updatedEmbed = new EmbedBuilder()
@@ -722,7 +686,6 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Button: Termin umlegen
   if (interaction.isButton() && interaction.customId === 'reschedule_appointment_button') {
     try {
       const modal = new ModalBuilder()
@@ -752,13 +715,12 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Button: Termin erledigt
   if (interaction.isButton() && interaction.customId === 'appointment_completed_button') {
     try {
       const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
       if (ticketData && ticketData.embedMessageId) {
         ticketData.appointmentCompleted = true;
-        ticketData.lastReset = false; // Reset-Status zurücksetzen, da eine neue Interaktion erfolgt ist
+        ticketData.lastReset = false;
         const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
         const currentEmbed = embedMessage.embeds[0];
         const updatedEmbed = new EmbedBuilder()
@@ -777,7 +739,6 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Button: AVPS Akte hinterlegen
   if (interaction.isButton() && interaction.customId === 'avps_link_button') {
     try {
       const modal = new ModalBuilder()
@@ -800,7 +761,6 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Button: AVPS Akte bearbeiten
   if (interaction.isButton() && interaction.customId === 'edit_avps_link_button') {
     try {
       const modal = new ModalBuilder()
@@ -823,13 +783,12 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Button: AVPS Akte löschen
   if (interaction.isButton() && interaction.customId === 'delete_avps_link_button') {
     try {
       const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
       if (ticketData && ticketData.embedMessageId) {
         ticketData.avpsLink = null;
-        ticketData.lastReset = false; // Reset-Status zurücksetzen, da eine neue Interaktion erfolgt ist
+        ticketData.lastReset = false;
         const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
         const currentEmbed = embedMessage.embeds[0];
         const updatedEmbed = new EmbedBuilder()
@@ -848,7 +807,6 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Modal-Submit: Termin festlegen
   if (interaction.isModalSubmit() && interaction.customId === 'schedule_appointment_modal') {
     try {
       let date = interaction.fields.getTextInputValue('date_input')?.trim() || '';
@@ -866,7 +824,6 @@ bot.on('interactionCreate', async (interaction) => {
       const defaultDate = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
       const defaultTime = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 
-      // Behalte alte Werte, wenn Eingaben leer sind
       if (!date && ticketData.appointmentDate) {
         date = ticketData.appointmentDate;
       }
@@ -874,7 +831,6 @@ bot.on('interactionCreate', async (interaction) => {
         time = ticketData.appointmentTime;
       }
 
-      // Setze aktuelles Datum/Uhrzeit, wenn keine Werte vorhanden sind
       const finalDate = date || ticketData.appointmentDate || defaultDate;
       const finalTime = time || ticketData.appointmentTime || defaultTime;
 
@@ -886,7 +842,7 @@ bot.on('interactionCreate', async (interaction) => {
         ticketData.appointmentDate = finalDate;
         ticketData.appointmentTime = finalTime;
         ticketData.appointmentCompleted = false;
-        ticketData.lastReset = false; // Reset-Status zurücksetzen, da eine neue Interaktion erfolgt ist
+        ticketData.lastReset = false;
 
         const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
         const currentEmbed = embedMessage.embeds[0];
@@ -908,7 +864,6 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Modal-Submit: Termin umlegen
   if (interaction.isModalSubmit() && interaction.customId === 'reschedule_appointment_modal') {
     try {
       let date = interaction.fields.getTextInputValue('date_input')?.trim() || '';
@@ -923,10 +878,9 @@ bot.on('interactionCreate', async (interaction) => {
       }
 
       const now = new Date();
-      const defaultDate = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const defaultTime = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      const defaultDate = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Berlin' });
+      const defaultTime = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' });
 
-      // Behalte alte Werte, wenn Eingaben leer sind
       if (!date && ticketData.appointmentDate) {
         date = ticketData.appointmentDate;
       }
@@ -934,7 +888,6 @@ bot.on('interactionCreate', async (interaction) => {
         time = ticketData.appointmentTime;
       }
 
-      // Setze aktuelles Datum/Uhrzeit, wenn keine Werte vorhanden sind
       const finalDate = date || ticketData.appointmentDate || defaultDate;
       const finalTime = time || ticketData.appointmentTime || defaultTime;
 
@@ -946,7 +899,7 @@ bot.on('interactionCreate', async (interaction) => {
         ticketData.appointmentDate = finalDate;
         ticketData.appointmentTime = finalTime;
         ticketData.appointmentCompleted = false;
-        ticketData.lastReset = false; // Reset-Status zurücksetzen, da eine neue Interaktion erfolgt ist
+        ticketData.lastReset = false;
 
         const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
         const currentEmbed = embedMessage.embeds[0];
@@ -968,7 +921,6 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-  // Modal-Submit: AVPS Akte hinterlegen
   if (interaction.isModalSubmit() && interaction.customId === 'avps_link_modal') {
     try {
       const link = interaction.fields.getTextInputValue('link_input')?.trim();
@@ -976,7 +928,7 @@ bot.on('interactionCreate', async (interaction) => {
       const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
       if (ticketData && ticketData.embedMessageId) {
         ticketData.avpsLink = link;
-        ticketData.lastReset = false; // Reset-Status zurücksetzen, da eine neue Interaktion erfolgt ist
+        ticketData.lastReset = false;
         const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
         const currentEmbed = embedMessage.embeds[0];
         const updatedEmbed = new EmbedBuilder()
@@ -996,7 +948,6 @@ bot.on('interactionCreate', async (interaction) => {
     }
   }
 
-// Modal-Submit: AVPS Akte bearbeiten
   if (interaction.isModalSubmit() && interaction.customId === 'edit_avps_link_modal') {
     try {
       const newLink = interaction.fields.getTextInputValue('link_input')?.trim();
@@ -1004,7 +955,7 @@ bot.on('interactionCreate', async (interaction) => {
       const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
       if (ticketData && ticketData.embedMessageId) {
         ticketData.avpsLink = newLink;
-        ticketData.lastReset = false; // Reset-Status zurücksetzen, da eine neue Interaktion erfolgt ist
+        ticketData.lastReset = false;
         const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
         const currentEmbed = embedMessage.embeds[0];
         const updatedEmbed = new EmbedBuilder()
