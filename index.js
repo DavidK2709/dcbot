@@ -436,21 +436,6 @@ if (interaction.isButton() && interaction.customId === 'appointment_completed_bu
   await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Termin erledigt.`);
   return;
 }
-
-const updateEmbedMessage = async (channel, ticketData) => {
-  try {
-    const embedMessage = await channel.messages.fetch(ticketData.embedMessageId);
-    const updatedEmbed = new EmbedBuilder()
-        .setTitle(embedMessage.embeds[0].title)
-        .setColor(embedMessage.embeds[0].color)
-        .addFields(createEmbedFields(ticketData));
-    await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
-    console.log(`(Bot) Embed-Nachricht erfolgreich aktualisiert in Kanal ${channel.id}`);
-  } catch (err) {
-    console.error(`(Bot) Fehler beim Bearbeiten der Embed-Nachricht in Kanal ${channel.id}:`, err);
-  }
-};
-
 const saveTicketData = () => {
   try {
     const data = Array.from(ticketDataStore.entries()).map(([key, value]) => ({ key, value }));
