@@ -90,6 +90,11 @@ const findUserInGuild = async (guild, input) => {
   }
 };
 
+const formatPrice = (price) => {
+  if (!price) return null;
+  return parseInt(price).toLocaleString('de-DE') + ' €';
+};
+
 const getChannelName = (ticketData) => {
   const reasonMapping = CONFIG.TICKET_REASONS[ticketData.grund];
   const isAutomaticTicket = reasonMapping && Object.keys(CONFIG.TICKET_REASONS).includes(ticketData.grund);
@@ -149,17 +154,22 @@ const getButtonRows = (ticketData) => {
       ));
     }
 
-    if (ticketData.appointmentCompleted) {
-      const components = [
-        ticketData.avpsLink
-            ? [
-              new ButtonBuilder().setCustomId('edit_avps_link_button').setLabel('AVPS Akte bearbeiten').setStyle(ButtonStyle.Danger),
-              new ButtonBuilder().setCustomId('delete_avps_link_button').setLabel('Akte löschen').setStyle(ButtonStyle.Danger),
-              new ButtonBuilder().setCustomId('akte_ausgegeben_button').setLabel('Akte wurde herausgegeben').setStyle(ButtonStyle.Success)
-            ]
-            : [new ButtonBuilder().setCustomId('avps_link_button').setLabel('AVPS Akte hinterlegen').setStyle(ButtonStyle.Danger)]
-      ];
-      rows.push(new ActionRowBuilder().addComponents(components));
+    if (ticketData.appointmentCompleted && (!ticketData.appointmentDate || !ticketData.appointmentTime)) {
+      rows.push(new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('schedule_followup_button').setLabel('Folgetermin festlegen').setStyle(ButtonStyle.Danger)
+      ));
+    }
+
+    if (ticketData.avpsLink) {
+      rows.push(new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('edit_avps_link_button').setLabel('AVPS Akte bearbeiten').setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId('delete_avps_link_button').setLabel('Akte löschen').setStyle(ButtonStyle.Danger),
+          new ButtonBuilder().setCustomId('akte_ausgegeben_button').setLabel('Akte wurde herausgegeben').setStyle(ButtonStyle.Success)
+      ));
+    } else {
+      rows.push(new ActionRowBuilder().addComponents(
+          new ButtonBuilder().setCustomId('avps_link_button').setLabel('AVPS Akte hinterlegen').setStyle(ButtonStyle.Danger)
+      ));
     }
 
     const preisButton = ticketData.preis
@@ -167,15 +177,12 @@ const getButtonRows = (ticketData) => {
         : new ButtonBuilder().setCustomId('set_preis_button').setLabel('Preis festlegen').setStyle(ButtonStyle.Danger);
 
     rows.push(new ActionRowBuilder().addComponents(
-        preisButton,
-        new ButtonBuilder().setCustomId('reset_ticket_button').setLabel('Ticket zurücksetzen').setStyle(ButtonStyle.Secondary).setDisabled(isResetDisabled)
+        preisButton
     ));
 
-    if (ticketData.appointmentCompleted && (!ticketData.appointmentDate || !ticketData.appointmentTime)) {
-      rows.push(new ActionRowBuilder().addComponents(
-          new ButtonBuilder().setCustomId('schedule_followup_button').setLabel('Folgetermin festlegen').setStyle(ButtonStyle.Danger)
-      ));
-    }
+    rows.push(new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('reset_ticket_button').setLabel('Ticket zurücksetzen').setStyle(ButtonStyle.Secondary).setDisabled(isResetDisabled)
+    ));
 
     return rows;
   } catch (err) {
@@ -203,7 +210,7 @@ const createEmbedFields = (ticketData) => {
   );
 
   if (ticketData.acceptedBy) fields.push({ name: 'Übernommen von', value: ticketData.acceptedBy, inline: true });
-  if (ticketData.preis) fields.push({ name: 'Preis', value: ticketData.preis, inline: true });
+  if (ticketData.preis) fields.push({ name: 'Preis', value: formatPrice(ticketData.preis), inline: true });
   if (ticketData.appointmentDate && ticketData.appointmentTime) fields.push({ name: 'Termin', value: `${ticketData.appointmentDate} - ${ticketData.appointmentTime}` });
   if (ticketData.followupAppointments && ticketData.followupAppointments.length > 0) {
     ticketData.followupAppointments.forEach((appt, index) => {
@@ -257,7 +264,6 @@ const loadTicketData = async (bot) => {
     }
     console.log('Ticket-Daten erfolgreich geladen.');
 
-    // Überprüfe alle Tickets und aktualisiere die Embeds
     for (const [channelId, ticketData] of ticketDataStore) {
       try {
         const channel = bot.channels.cache.get(channelId);
@@ -735,7 +741,7 @@ bot.on('interactionCreate', async (interaction) => {
             .addFields([
               { name: 'Name des Gutachters', value: ticketData.acceptedBy },
               { name: 'Grund', value: reasonMapping ? reasonMapping.displayName : ticketData.grund },
-              { name: 'Preis', value: ticketData.preis || 'Nicht angegeben' },
+              { name: 'Preis', value: formatPrice(ticketData.preis) || 'Nicht angegeben' },
               { name: 'Akte', value: ticketData.avpsLink }
             ]);
 
@@ -764,7 +770,7 @@ bot.on('interactionCreate', async (interaction) => {
                   { name: 'Akte', value: ticketData.avpsLink }
                 ]);
             if (ticketData.preis && parseInt(ticketData.preis) > 0) {
-              stationEmbed.addFields([{ name: 'Preis', value: ticketData.preis }]);
+              stationEmbed.addFields([{ name: 'Preis', value: formatPrice(ticketData.preis) }]);
             }
             await stationLogChannel.send({ embeds: [stationEmbed] });
           }
@@ -791,7 +797,7 @@ bot.on('interactionCreate', async (interaction) => {
               new ActionRowBuilder().addComponents(
                   new TextInputBuilder()
                       .setCustomId('user_input')
-                      .setLabel('Benutzer/Dienstnummer (mit ; trennen)') // Gekürztes Label
+                      .setLabel('Benutzer/Dienstnummer (mit ; trennen)')
                       .setStyle(TextInputStyle.Short)
                       .setRequired(true)
               )
@@ -988,9 +994,9 @@ bot.on('interactionCreate', async (interaction) => {
         ticketData.followupAppointments.push({ date: ticketData.appointmentDate, time: ticketData.appointmentTime });
         ticketData.appointmentDate = null;
         ticketData.appointmentTime = null;
+        ticketData.appointmentCompleted = false;
       }
 
-      ticketData.appointmentCompleted = true;
       ticketData.lastReset = false;
       saveTicketData();
 
@@ -1125,7 +1131,11 @@ bot.on('interactionCreate', async (interaction) => {
 
       await updateEmbedMessage(interaction.channel, ticketData);
       await updateChannelName(interaction.channel, ticketData);
-      await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Preis ${preis ? `auf ${preis} festgelegt.` : 'gelöscht.'}`);
+      await interaction.channel.send(
+          preis != null
+              ? `[${getTimestamp()}] ${interaction.user} hat den Preis ${preis} auf ${formatPrice(preis)} festgelegt.`
+              : `[${getTimestamp()}] ${interaction.user} hat den Preis gelöscht.`
+      );
       return;
     }
 
@@ -1158,7 +1168,7 @@ bot.on('interactionCreate', async (interaction) => {
 
       await updateEmbedMessage(interaction.channel, ticketData);
       await updateChannelName(interaction.channel, ticketData);
-      await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Preis ${preis ? `auf ${preis} bearbeitet.` : 'gelöscht.'}`);
+      await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Preis ${preis ? `auf ${formatPrice(preis)} bearbeitet.` : 'gelöscht.'}`);
       return;
     }
 
@@ -1234,6 +1244,7 @@ bot.on('interactionCreate', async (interaction) => {
       ticketData.avpsLink = null;
       ticketData.callAttempt = false;
       ticketData.preis = null;
+      ticketData.followupAppointments = [];
       ticketData.lastReset = true;
       saveTicketData();
 
