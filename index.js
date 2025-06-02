@@ -210,19 +210,149 @@ const createEmbedFields = (ticketData) => {
   );
 
   if (ticketData.acceptedBy) fields.push({ name: 'Übernommen von', value: ticketData.acceptedBy, inline: true });
-  if (ticketData.preis) fields.push({ name: 'Preis', value: formatPrice(ticketData.preis), inline: false }); // Preis nicht inline
+  if (ticketData.preis) fields.push({ name: 'Preis', value: formatPrice(ticketData.preis), inline: false });
   if (ticketData.appointmentDate && ticketData.appointmentTime) {
-    fields.push({ name: 'Termin', value: `${ticketData.appointmentDate} - ${ticketData.appointmentTime}` }); // Erster Termin bleibt "Termin"
+    fields.push({ name: 'Termin', value: ticketData.appointmentDate + ' - ' + ticketData.appointmentTime });
   }
   if (ticketData.followupAppointments && ticketData.followupAppointments.length > 0) {
     ticketData.followupAppointments.forEach((appt, index) => {
-      fields.push({ name: `Folgetermin ${index + 1}`, value: `${appt.date} - ${appt.time}` }); // Folgetermine mit Nummerierung
+      fields.push({ name: 'Folgetermin ' + (index + 1), value: appt.date + ' - ' + appt.time });
     });
   }
   if (ticketData.avpsLink) fields.push({ name: 'AVPS-Akte', value: ticketData.avpsLink });
 
   return fields;
 };
+
+const updateEmbedMessage = async (channel, ticketData) => {
+  try {
+    const embedMessage = await channel.messages.fetch(ticketData.embedMessageId);
+    const updatedEmbed = new EmbedBuilder()
+        .setTitle(embedMessage.embeds[0].title)
+        .setColor(embedMessage.embeds[0].color)
+        .addFields(createEmbedFields(ticketData));
+    await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
+    console.log('(Bot) Embed-Nachricht erfolgreich aktualisiert in Kanal ' + channel.id);
+  } catch (err) {
+    console.error('(Bot) Fehler beim Bearbeiten der Embed-Nachricht in Kanal ' + channel.id + ':', err);
+  }
+};
+
+bot.on('interactionCreate', async (interaction) => {
+  console.log('(Bot) Interaktion empfangen: ' + interaction.customId + ' in Kanal ' + (interaction.channel?.id || 'unbekannt'));
+  try {
+    if (!ticketDataStore.has(interaction.channel?.id) && !interaction.customId.startsWith('create_ticket_')) {
+      console.error('(Bot) Ticket-Daten für Kanal ' + (interaction.channel?.id || 'unbekannt') + ' nicht gefunden.');
+      await interaction.reply({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
+      return;
+    }
+
+    if (interaction.isButton() && interaction.customId === 'appointment_completed_button') {
+      const ticketData = ticketDataStore.get(interaction.channel.id);
+      if (!ticketData) {
+        console.error('(Bot) Ticket-Daten für Kanal ' + interaction.channel.id + ' nicht gefunden bei appointment_completed_button.');
+        await interaction.reply({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
+        return;
+      }
+
+      if (ticketData.appointmentDate && ticketData.appointmentTime) {
+        ticketData.followupAppointments = ticketData.followupAppointments || [];
+        ticketData.followupAppointments.push({ date: ticketData.appointmentDate, time: ticketData.appointmentTime });
+        ticketData.appointmentDate = null;
+        ticketData.appointmentTime = null;
+      }
+
+      ticketData.appointmentCompleted = true;
+      ticketData.lastReset = false;
+      saveTicketData();
+
+      await updateEmbedMessage(interaction.channel, ticketData);
+      await updateChannelName(interaction.channel, ticketData);
+      await interaction.channel.send('[' + getTimestamp() + '] ' + interaction.user + ' hat den Termin erledigt.');
+      await interaction.reply({ content: 'Termin erledigt.', ephemeral: true });
+      return;
+    }
+
+    if (interaction.isButton() && interaction.customId === 'set_preis_button') {
+      const modal = new ModalBuilder()
+          .setCustomId('set_preis_modal')
+          .setTitle('Preis festlegen')
+          .addComponents(
+              new ActionRowBuilder().addComponents(
+                  new TextInputBuilder().setCustomId('preis_input').setLabel('Preis').setStyle(TextInputStyle.Short).setRequired(false)
+              )
+          );
+      await interaction.showModal(modal);
+      return;
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId === 'set_preis_modal') {
+      const ticketData = ticketDataStore.get(interaction.channel.id);
+      if (!ticketData) {
+        console.error('(Bot) Ticket-Daten für Kanal ' + interaction.channel.id + ' nicht gefunden bei set_preis_modal.');
+        await interaction.reply({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
+        return;
+      }
+
+      const preis = interaction.fields.getTextInputValue('preis_input')?.trim();
+      ticketData.preis = preis ? parseInt(preis) : undefined;
+      ticketData.lastReset = false;
+      saveTicketData();
+
+      await updateEmbedMessage(interaction.channel, ticketData);
+      await updateChannelName(interaction.channel, ticketData);
+      await interaction.channel.send(
+          preis
+              ? '[' + getTimestamp() + '] ' + interaction.user + ' hat den Preis auf ' + formatPrice(preis) + ' festgelegt.'
+              : '[' + getTimestamp() + '] ' + interaction.user + ' hat den Preis entfernt.'
+      );
+      await interaction.reply({ content: preis ? 'Preis festgelegt.' : 'Preis entfernt.', ephemeral: true });
+      return;
+    }
+
+    if (interaction.isButton() && interaction.customId === 'edit_preis_button') {
+      const modal = new ModalBuilder()
+          .setCustomId('edit_preis_modal')
+          .setTitle('Preis bearbeiten')
+          .addComponents(
+              new ActionRowBuilder().addComponents(
+                  new TextInputBuilder().setCustomId('preis_input').setLabel('Neuer Preis').setStyle(TextInputStyle.Short).setRequired(false)
+              )
+          );
+      await interaction.showModal(modal);
+      return;
+    }
+
+    if (interaction.isModalSubmit() && interaction.customId === 'edit_preis_modal') {
+      const ticketData = ticketDataStore.get(interaction.channel.id);
+      if (!ticketData) {
+        console.error('(Bot) Ticket-Daten für Kanal ' + interaction.channel.id + ' nicht gefunden bei edit_preis_modal.');
+        await interaction.reply({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
+        return;
+      }
+
+      const preis = interaction.fields.getTextInputValue('preis_input')?.trim();
+      ticketData.preis = preis ? parseInt(preis) : undefined;
+      ticketData.lastReset = false;
+      saveTicketData();
+
+      await updateEmbedMessage(interaction.channel, ticketData);
+      await updateChannelName(interaction.channel, ticketData);
+      await interaction.channel.send(
+          preis
+              ? '[' + getTimestamp() + '] ' + interaction.user + ' hat den Preis auf ' + formatPrice(preis) + ' bearbeitet.'
+              : '[' + getTimestamp() + '] ' + interaction.user + ' hat den Preis entfernt.'
+      );
+      await interaction.reply({ content: preis ? 'Preis bearbeitet.' : 'Preis entfernt.', ephemeral: true });
+      return;
+    }
+  } catch (err) {
+    console.error('(Bot) Unerwarteter Fehler in interactionCreate für Kanal ' + (interaction.channel?.id || 'unbekannt') + ':', err);
+    if (!interaction.replied) {
+      await interaction.reply({ content: 'Ein Fehler ist aufgetreten. Bitte versuche es erneut.', ephemeral: true }).catch(e => console.error('(Bot) Fehler beim Senden der Fehlerantwort:', e));
+    }
+  }
+});
 
 const updateEmbedMessage = async (channel, ticketData) => {
   try {
