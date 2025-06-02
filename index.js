@@ -660,7 +660,7 @@ bot.on('interactionCreate', async (interaction) => {
           .setTitle('Benutzer auswählen')
           .addComponents(
               new ActionRowBuilder().addComponents(
-                  new TextInputBuilder().setCustomId('user_input').setLabel('Nickname oder Nummer').setStyle(TextInputStyle.Short).setRequired(true)
+                  new TextInputBuilder().setCustomId('user_input').setLabel('Username oder Dienstnummer').setStyle(TextInputStyle.Short).setRequired(true)
               )
           );
       await interaction.showModal(modal);
