@@ -28,7 +28,10 @@ const CONFIG = {
       leaderRoleId: '1283118800224653422'
     }
   },
-
+  rettungsdienst_rollen: [
+    '893588861744201786', // Rettungsdienst
+    '1009513539414790195'  // Aushilfskräfte
+  ],
   TICKET_REASONS: {
     ticket_arbeitsmedizinisches_pol: { internalKey: 'gutachten-polizei-patient', displayName: 'Arbeitsmedizinisches Gutachten Polizeibewerber' },
     ticket_arbeitsmedizinisches_jva: { internalKey: 'gutachten-jva-patient', displayName: 'Arbeitsmedizinisches Gutachten JVA/Wachschutz' },
@@ -496,22 +499,27 @@ bot.on('interactionCreate', async (interaction) => {
         return;
       }
 
+      // Berechtigungen für den Kanal erstellen
+      const permissionOverwrites = [
+        { id: interaction.guild.id, deny: ['ViewChannel'] },
+        { id: departmentConfig.memberRoleId, allow: ['ViewChannel', 'SendMessages'] } // Abteilungsspezifische Rolle
+      ];
+
+      // Zusätzliche Rollen aus CONFIG.rettungsdienst_rollen hinzufügen
+      CONFIG.rettungsdienst_rollen.forEach(roleId => {
+        permissionOverwrites.push({ id: roleId, allow: ['ViewChannel', 'SendMessages'] });
+      });
+
       const channel = await interaction.guild.channels.create({
         name: `🕓 ${patient.replace(/ /g, '-')}`,
         type: 0,
         parent: departmentConfig.categoryId,
-        permissionOverwrites: [
-          { id: interaction.guild.id, deny: ['ViewChannel'] },
-          { id: departmentConfig.memberRoleId, allow: ['ViewChannel', 'SendMessages'] }, // Bereits vorhandene Regel für memberRoleId
-          // Zusätzliche Benutzergruppen hinzufügen
-          { id: '893588861744201786', allow: ['ViewChannel', 'SendMessages'] }, // Rettungsdienst  Member
-          { id: '1009513539414790195', allow: ['ViewChannel', 'SendMessages'] }, // Aushilfskräfte Member
-        ],
+        permissionOverwrites: permissionOverwrites
       });
 
       const data = {
         abteilung, grund, patient, telefon, sonstiges, abteilungPing: `<@&${departmentConfig.memberRoleId}>`,
-        createdBy: `<@${interaction.user.id}>`, // Ersteller speichern
+        createdBy: `<@${interaction.user.id}>`,
         buttonMessageId: null, appointmentMessageId: null, completedMessageId: null,
         avpsMessageId: null, embedMessageId: null,
         appointmentDate: null, appointmentTime: null, acceptedBy: null, avpsLink: null,
@@ -562,6 +570,12 @@ bot.on('interactionCreate', async (interaction) => {
       const config = CONFIG.DEPARTMENTS[department];
       await interaction.channel.permissionOverwrites.edit(config.memberRoleId, { SendMessages: false });
       await interaction.channel.permissionOverwrites.edit(config.leaderRoleId, { ViewChannel: true, SendMessages: true });
+
+      // Schreibrechte für rettungsdienst_rollen entfernen
+      CONFIG.rettungsdienst_rollen.forEach(roleId => {
+        interaction.channel.permissionOverwrites.edit(roleId, { SendMessages: false });
+      });
+
       for (const roleId of CONFIG.ADMIN_ROLES) {
         await interaction.channel.permissionOverwrites.edit(roleId, { ViewChannel: true, SendMessages: true });
       }
