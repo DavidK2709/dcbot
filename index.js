@@ -600,6 +600,11 @@ bot.on('interactionCreate', async (interaction) => {
       const config = CONFIG.DEPARTMENTS[ticketData.abteilung];
       await interaction.channel.permissionOverwrites.edit(config.memberRoleId, { SendMessages: true });
 
+      // Schreibrechte für rettungsdienst_rollen wiederherstellen
+      CONFIG.rettungsdienst_rollen.forEach(roleId => {
+        interaction.channel.permissionOverwrites.edit(roleId, { SendMessages: true });
+      });
+
       ticketData.isClosed = false;
       saveTicketData();
 
