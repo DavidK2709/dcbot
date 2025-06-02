@@ -385,12 +385,6 @@ bot.on('messageCreate', async (message) => {
     return;
   }
 
-  // Überprüfe, ob der Grund in TICKET_REASONS existiert, falls nicht, logge einen Fehler
-  if (!CONFIG.TICKET_REASONS[data.grund] && data.grund.startsWith('ticket_')) {
-    console.log(`(Bot) Fehler: Unbekannter Grund "${data.grund}" in Kanal ${message.channel.id}. Verfügbare Gründe: ${Object.keys(CONFIG.TICKET_REASONS).join(', ')}`);
-    return;
-  }
-
   const departmentConfig = CONFIG.DEPARTMENTS[data.abteilung];
   const channelName = getChannelName(data);
   const guild = message.guild;
@@ -403,10 +397,14 @@ bot.on('messageCreate', async (message) => {
       parent: departmentConfig.categoryId,
       permissionOverwrites: [
         { id: guild.id, deny: ['ViewChannel'] },
-        { id: departmentConfig.memberRoleId, allow: ['ViewChannel', 'SendMessages'] },
-      ],
+        { id: departmentConfig.memberRoleId, allow: ['ViewChannel', 'SendMessages'] }
+      ]
     });
-    console.log(`(Bot) Kanal ${channel.id} erfolgreich erstellt`);
+
+    // ADMIN_ROLES hinzufügen
+    CONFIG.ADMIN_ROLES.forEach(roleId => {
+      channel.permissionOverwrites.create(roleId, { ViewChannel: true, SendMessages: true });
+    });
   } catch (err) {
     console.error(`(Bot) Fehler beim Erstellen des Kanals in Guild ${guild.id}:`, err);
     return;
@@ -507,6 +505,11 @@ bot.on('interactionCreate', async (interaction) => {
 
       // Zusätzliche Rollen aus CONFIG.rettungsdienst_rollen hinzufügen
       CONFIG.rettungsdienst_rollen.forEach(roleId => {
+        permissionOverwrites.push({ id: roleId, allow: ['ViewChannel', 'SendMessages'] });
+      });
+
+      // ADMIN_ROLES hinzufügen
+      CONFIG.ADMIN_ROLES.forEach(roleId => {
         permissionOverwrites.push({ id: roleId, allow: ['ViewChannel', 'SendMessages'] });
       });
 
@@ -752,7 +755,17 @@ bot.on('interactionCreate', async (interaction) => {
       }
 
       let date = interaction.fields.getTextInputValue('date_input')?.trim() || ticketData.appointmentDate || new Date().toLocaleDateString('de-DE');
-      let time = interaction.fields.getTextInputValue('time_input')?.trim() || ticketData.appointmentTime || new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+
+      // Aktuelle Uhrzeit berechnen und +2 Stunden hinzufügen
+      let timeInput = interaction.fields.getTextInputValue('time_input')?.trim();
+      let time;
+      if (!timeInput) {
+        const now = new Date();
+        now.setHours(now.getHours() + 2); // +2 Stunden zur aktuellen Uhrzeit
+        time = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+      } else {
+        time = timeInput;
+      }
 
       ticketData.appointmentDate = date;
       ticketData.appointmentTime = time;
