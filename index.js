@@ -502,7 +502,11 @@ bot.on('interactionCreate', async (interaction) => {
         parent: departmentConfig.categoryId,
         permissionOverwrites: [
           { id: interaction.guild.id, deny: ['ViewChannel'] },
-          { id: departmentConfig.memberRoleId, allow: ['ViewChannel', 'SendMessages'] },
+          { id: departmentConfig.memberRoleId, allow: ['ViewChannel', 'SendMessages'] }, // Bereits vorhandene Regel für memberRoleId
+          // Zusätzliche Benutzergruppen hinzufügen
+          { id: '1248410238365728801', allow: ['ViewChannel', 'SendMessages'] }, // Arbeitsmedizin Member
+          { id: '987267100026470431', allow: ['ViewChannel', 'SendMessages'] }, // Psychologie Member
+          { id: '893588861744201787', allow: ['ViewChannel', 'SendMessages'] }   // Station Member
         ],
       });
 
@@ -534,7 +538,7 @@ bot.on('interactionCreate', async (interaction) => {
 
       const confirmationEmbed = new EmbedBuilder()
           .setTitle('Ticket erfolgreich erstellt')
-          .setColor(0x480007) // Farbe angepasst
+          .setColor(0x480007)
           .addFields([
             { name: 'Abteilung', value: data.abteilungPing, inline: false },
             { name: 'Grund', value: grund, inline: false },
