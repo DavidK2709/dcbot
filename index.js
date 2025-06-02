@@ -1,25 +1,48 @@
 require('dotenv').config();
-const { Client } = require("discord.js-selfbot-v13");
-const { Client: BotClient, GatewayIntentBits, EmbedBuilder, Partials, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
+const { Client: BotClient, GatewayIntentBits, EmbedBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, ModalBuilder, TextInputBuilder, TextInputStyle } = require("discord.js");
+const fs = require('fs');
 
 // === CONFIG ===
-const { DISCORD_TOKEN: USER_TOKEN, BOT_TOKEN, BOT_USER_ID, ALLOWED_GUILD, ALLOWED_CATEGORY_ID, TRIGGER_CHANNEL_ID, TICKET_TOOL_BOT_ID, TICKET_CREATOR_BOT_ID } = process.env;
+const { BOT_TOKEN, BOT_USER_ID, ALLOWED_GUILD, TRIGGER_CHANNEL_ID, LOG_CHANNEL_ID } = process.env;
+
+const departmentConfig = {
+  'Arbeitsmedizin': {
+    categoryId: '1378976400303718522',
+    memberRoleId: '1378976857470406706',
+    leaderRoleId: '1378976900642508933'
+  },
+  'Psychologie': {
+    categoryId: '1378976458877177996',
+    memberRoleId: '1378976959945769061',
+    leaderRoleId: '1378977015516102656'
+  },
+  'Station': {
+    categoryId: '1378976512191238226',
+    memberRoleId: '1378977083904102600',
+    leaderRoleId: '1378977159615348766'
+  }
+};
+
+const memberRoleToDepartment = {
+  '1378976857470406706': 'Arbeitsmedizin',
+  '1378976959945769061': 'Psychologie',
+  '1378977083904102600': 'Station'
+};
+
 const ticketDataStore = new Map();
 
-// Timestamp-Helferfunktion
+// === HELPER FUNCTIONS ===
 const getTimestamp = () => new Date().toLocaleString('de-DE', { timeZone: 'Europe/Berlin', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', second: '2-digit' }).replace(', ', ' - ');
 
-// Benutzer im Server suchen (nach Nummer oder Nickname)
 const findUserInGuild = async (guild, input) => {
   try {
     const members = await guild.members.fetch();
     const cleanInput = input.trim();
     let member;
 
-    // Prüfe, ob die Eingabe eine Zahl ist (z.B. "8" oder "08")
     const isNumber = /^\d+$/.test(cleanInput);
     if (isNumber) {
-      const formattedNumber = cleanInput.padStart(2, '0'); // z.B. "8" -> "08"
+      const formattedNumber = cleanInput.padStart(2, '0');
       member = members.find(m => {
         const match = m.displayName.match(/\[(\d+)\]/);
         return match && match[1] === formattedNumber;
@@ -27,7 +50,6 @@ const findUserInGuild = async (guild, input) => {
       return member ? { mention: `<@${member.user.id}>`, nickname: member.displayName } : { mention: cleanInput, nickname: cleanInput };
     }
 
-    // Suche nach Nickname
     member = members.find(m => m.displayName.replace(/\[[\d+]\]\s*/g, '').toLowerCase() === cleanInput.toLowerCase());
     return member ? { mention: `<@${member.user.id}>`, nickname: member.displayName } : { mention: cleanInput, nickname: cleanInput };
   } catch (err) {
@@ -36,16 +58,50 @@ const findUserInGuild = async (guild, input) => {
   }
 };
 
-// Button-Zeilen basierend auf Ticket-Daten erstellen
-const getButtonRows = (ticketData) => {
+const updateChannelName = async (channel, ticketData) => {
+  const isAutomaticTicket = Object.keys({
+    ticket_arbeitsmedizinisches_polizei: '', ticket_arbeitsmedizinisches_jva: '', ticket_arbeitsmedizinisches_ammunation: '',
+    ticket_arbeitsmedizinisches_mediziner: '', ticket_psycholgie_bundeswehr: '', ticket_psychologie_jva: ''
+  }).includes(ticketData.grund);
+  const baseName = isAutomaticTicket
+      ? `${ticketData.grund.split('_').slice(1).join('_')}-${ticketData.patient.replace(/ /g, '-')}`
+      : `${ticketData.patient.replace(/ /g, '-')}`;
+
+  let symbols = [];
   if (ticketData.isClosed) {
-    return [new ActionRowBuilder().addComponents(
-        new ButtonBuilder().setCustomId('reopen_ticket_button').setLabel('Ticket wieder öffnen').setStyle(ButtonStyle.Success)
-    )];
+    symbols = ['✅'];
+  } else if (ticketData.lastReset) {
+    symbols = ['❗'];
+  } else if (ticketData.appointmentDate && ticketData.appointmentTime) {
+    symbols = ['📅'];
+    if (ticketData.acceptedBy) symbols.unshift('📌'); // 📌 vor 📅
+    else if (ticketData.callAttempt) symbols = ['📅']; // 📅 ersetzt ☎️
+  } else if (ticketData.callAttempt) {
+    symbols = ['☎️'];
+    if (ticketData.acceptedBy) symbols.unshift('📌'); // 📌 vor ☎️
+  } else if (ticketData.acceptedBy) {
+    symbols = ['📌'];
+  } else {
+    symbols = ['🆕'];
+  }
+
+  const newName = `${symbols.join('')} ${baseName}`;
+  await channel.setName(newName.slice(0, 100)); // Discord hat eine maximale Länge von 100 Zeichen
+};
+
+const getButtonRows = (ticketData) => {
+  const rows = [];
+
+  if (ticketData.isClosed) {
+    rows.push(new ActionRowBuilder().addComponents(
+        new ButtonBuilder().setCustomId('reopen_ticket_button').setLabel('Ticket wieder öffnen').setStyle(ButtonStyle.Success),
+        new ButtonBuilder().setCustomId('delete_ticket_button').setLabel('Ticket löschen').setStyle(ButtonStyle.Danger)
+    ));
+    return rows;
   }
 
   const hasInteraction = ticketData.acceptedBy || ticketData.appointmentDate || ticketData.appointmentTime || ticketData.avpsLink;
-  const isResetDisabled = !hasInteraction || ticketData.lastReset; // Button deaktivieren, wenn keine Interaktion oder zuletzt zurückgesetzt
+  const isResetDisabled = !hasInteraction || ticketData.lastReset;
   const takeoverButton = ticketData.acceptedBy
       ? new ButtonBuilder().setCustomId('takeover_ticket_button').setLabel('Ticket neuvergeben').setStyle(ButtonStyle.Secondary)
       : new ButtonBuilder().setCustomId('takeover_ticket_button').setLabel('Ticket vergeben').setStyle(ButtonStyle.Danger);
@@ -60,7 +116,7 @@ const getButtonRows = (ticketData) => {
     row1Components.splice(1, 0, new ButtonBuilder().setCustomId('schedule_appointment_button').setLabel('Termin festlegen').setStyle(ButtonStyle.Danger));
   }
 
-  const rows = [new ActionRowBuilder().addComponents(row1Components)];
+  rows.push(new ActionRowBuilder().addComponents(row1Components));
 
   if (ticketData.appointmentDate && ticketData.appointmentTime && !ticketData.appointmentCompleted) {
     rows.push(new ActionRowBuilder().addComponents(
@@ -88,41 +144,129 @@ const getButtonRows = (ticketData) => {
   return rows;
 };
 
-// Embed-Felder in der gewünschten Reihenfolge erstellen
 const createEmbedFields = (ticketData, ticketReasons) => {
   const fields = [
-    { name: 'Abteilung', value: ticketData.abteilung || 'Nicht angegeben' },
+    { name: 'Abteilung', value: ticketData.abteilungPing || 'Nicht angegeben' },
     { name: 'Grund', value: ticketReasons[ticketData.grund] || ticketData.grund || 'Nicht angegeben' },
-    { name: 'Patient', value: ` ${ticketData.patient || 'Nicht angegeben'}` },
+    { name: 'Patient', value: ticketData.patient || 'Nicht angegeben' },
     { name: 'Telefon', value: ticketData.telefon || 'Nicht angegeben' },
     { name: 'Sonstiges', value: ticketData.sonstiges || 'Nicht angegeben' }
   ];
 
-  if (ticketData.acceptedBy) {
-    fields.push({ name: 'Übernommen von', value: ticketData.acceptedBy, inline: true });
-  }
-
-  if (ticketData.appointmentDate && ticketData.appointmentTime) {
-    fields.push({ name: 'Termin', value: ` ${ticketData.appointmentDate} -  ${ticketData.appointmentTime}` });
-  }
-
-  if (ticketData.avpsLink) {
-    fields.push({ name: 'AVPS-Akte', value: ` ${ticketData.avpsLink}` });
-  }
+  if (ticketData.acceptedBy) fields.push({ name: 'Übernommen von', value: ticketData.acceptedBy, inline: true });
+  if (ticketData.appointmentDate && ticketData.appointmentTime) fields.push({ name: 'Termin', value: `${ticketData.appointmentDate} - ${ticketData.appointmentTime}` });
+  if (ticketData.avpsLink) fields.push({ name: 'AVPS-Akte', value: ticketData.avpsLink });
 
   return fields;
 };
 
-const userbot = new Client({ checkUpdate: false });
+const saveTicketData = () => {
+  const data = Array.from(ticketDataStore.entries()).map(([key, value]) => ({ key, value }));
+  fs.writeFileSync('tickets.json', JSON.stringify(data, null, 2));
+};
+
+const loadTicketData = () => {
+  try {
+    if (!fs.existsSync('tickets.json')) {
+      console.log('tickets.json nicht gefunden. Initialisiere mit leerer Map.');
+      ticketDataStore.clear();
+      return;
+    }
+    const data = fs.readFileSync('tickets.json', 'utf8');
+    const parsed = JSON.parse(data);
+    if (!Array.isArray(parsed)) throw new Error('Ungültiges Format in tickets.json');
+
+    ticketDataStore.clear();
+    for (const item of parsed) {
+      if (!item.key || !item.value) throw new Error('Fehlende Schlüssel oder Werte in tickets.json');
+      ticketDataStore.set(item.key, item.value);
+    }
+    console.log('Ticket-Daten erfolgreich geladen.');
+  } catch (err) {
+    console.error('Fehler beim Laden von tickets.json:', err);
+    ticketDataStore.clear();
+    fs.writeFileSync('tickets.json', JSON.stringify([], null, 2));
+    console.log('tickets.json zurückgesetzt auf leeres Array.');
+  }
+};
+
+const archiveTicketData = (channelId, data) => {
+  let archivedTickets = [];
+  try {
+    if (fs.existsSync('archive_tickets.json')) {
+      const archivedData = fs.readFileSync('archive_tickets.json', 'utf8');
+      archivedTickets = JSON.parse(archivedData);
+      if (!Array.isArray(archivedTickets)) throw new Error('Ungültiges Format in archive_tickets.json');
+    }
+  } catch (err) {
+    console.error('Fehler beim Laden von archive_tickets.json:', err);
+    archivedTickets = [];
+  }
+  archivedTickets.push({ channelId, data, archivedAt: new Date().toISOString() });
+  fs.writeFileSync('archive_tickets.json', JSON.stringify(archivedTickets, null, 2));
+  console.log(`(Bot) Ticket ${channelId} erfolgreich in archive_tickets.json archiviert.`);
+};
+
+// === BOT CLIENT ===
 const bot = new BotClient({
   intents: [GatewayIntentBits.Guilds, GatewayIntentBits.GuildMessages, GatewayIntentBits.MessageContent, GatewayIntentBits.GuildMembers],
-  partials: [Partials.Channel, Partials.Message]
 });
 
-// === Userbot: Ticket erstellen, Benutzer hinzufügen, Ticket umbenennen ===
-userbot.on('ready', () => console.log(`(Userbot) Eingeloggt als ${userbot.user.tag}`));
+// === EVENTS ===
+bot.on('ready', async () => {
+  console.log(`(Bot) Eingeloggt als ${bot.user.tag} auf Server ${bot.guilds.cache.map(g => g.name).join(', ')}`);
+  loadTicketData();
 
-userbot.on('messageCreate', async (message) => {
+  const formChannelId = '1378976315822313502';
+  const formChannel = bot.channels.cache.get(formChannelId);
+  if (formChannel) {
+    console.log(`(Bot) Kanal gefunden: ${formChannel.name} (${formChannel.id})`);
+    try {
+      const messages = await formChannel.messages.fetch({ limit: 100 });
+      console.log(`(Bot) ${messages.size} Nachrichten im Kanal geladen`);
+      const botMessages = messages.filter(msg => msg.author.id === bot.user.id && msg.components.length > 0);
+
+      if (botMessages.size > 1) {
+        const messagesToDelete = botMessages.map(msg => msg).slice(1);
+        for (const msg of messagesToDelete) {
+          await msg.delete();
+          console.log(`(Bot) Alte Ticketformular-Nachricht gelöscht: ${msg.id}`);
+        }
+      }
+
+      const otherMessages = messages.filter(msg => msg.author.id !== bot.user.id || !msg.components.length);
+      for (const msg of otherMessages.values()) {
+        await msg.delete();
+        console.log(`(Bot) Andere Nachricht gelöscht: ${msg.id}`);
+      }
+
+      if (botMessages.size === 0) {
+        const row = new ActionRowBuilder().addComponents(
+            new ButtonBuilder().setCustomId('create_ticket_station').setLabel('Station').setStyle(ButtonStyle.Primary).setEmoji('🏥'),
+            new ButtonBuilder().setCustomId('create_ticket_arbeitsmedizin').setLabel('Arbeitsmedizin').setStyle(ButtonStyle.Success).setEmoji('🏃‍♂️'),
+            new ButtonBuilder().setCustomId('create_ticket_psychologie').setLabel('Psychologie').setStyle(ButtonStyle.Danger).setEmoji('🗣️')
+        );
+
+        const embed = new EmbedBuilder()
+            .setTitle('Behandlungsanfrage öffnen')
+            .setDescription('Bitte wähle den gewünschten Fachbereich aus:')
+            .setColor(0x480007);
+
+        const sentMessage = await formChannel.send({ embeds: [embed], components: [row] });
+        console.log(`(Bot) Neue Ticketformular-Nachricht gesendet in Kanal ${formChannel.name} (${formChannel.id}) mit ID ${sentMessage.id}`);
+      } else {
+        console.log(`(Bot) Ticketformular-Nachricht bereits vorhanden in Kanal ${formChannel.name} (${formChannel.id})`);
+      }
+    } catch (error) {
+      console.error(`(Bot) Fehler beim Verarbeiten des Kanals ${formChannelId}:`, error);
+    }
+  } else {
+    console.error(`(Bot) Kanal mit ID ${formChannelId} nicht gefunden oder nicht zugänglich. Verfügbare Server: ${bot.guilds.cache.map(g => `${g.name} (${g.id})`).join(', ')}`);
+  }
+});
+
+bot.on('messageCreate', async (message) => {
+  console.log(`(Bot) Nachricht empfangen in Kanal ${message.channel.id}: ${message.content}`);
   if (message.channel.id !== TRIGGER_CHANNEL_ID || message.author.id !== BOT_USER_ID) return;
 
   const data = {
@@ -130,10 +274,9 @@ userbot.on('messageCreate', async (message) => {
     buttonMessageId: null, appointmentMessageId: null, completedMessageId: null,
     avpsMessageId: null, embedMessageId: null,
     appointmentDate: null, appointmentTime: null, acceptedBy: null, avpsLink: null,
-    appointmentCompleted: false, isClosed: false, lastReset: false
+    appointmentCompleted: false, isClosed: false, lastReset: false, callAttempt: false
   };
 
-  // Parsing der Nachricht
   const lines = message.content.split('\n').map(line => line.trim());
   for (const line of lines) {
     const match = line.match(/>\s\*\*(.+?):\*\*\s(.+)/);
@@ -141,15 +284,19 @@ userbot.on('messageCreate', async (message) => {
       const field = match[1].toLowerCase();
       const value = match[2].trim();
       if (field === 'abteilung') {
-        // Extrahiere Rollen-ID aus Ping (z.B. <@&123456789>)
         const roleIdMatch = value.match(/<@&(\d+)>/);
         if (roleIdMatch) {
           const roleId = roleIdMatch[1];
-          const role = message.guild?.roles.cache.get(roleId);
-          data.abteilung = role ? role.name.replace(/[^a-zA-Z0-9-]/g, '-') : 'Nicht angegeben';
-          data.abteilungPing = `<@&${roleId}>`;
+          const department = memberRoleToDepartment[roleId];
+          if (department) {
+            data.abteilung = department;
+            data.abteilungPing = `<@&${roleId}>`;
+          } else {
+            data.abteilung = 'Nicht angegeben';
+            data.abteilungPing = 'Nicht angegeben';
+          }
         } else {
-          data.abteilung = value.replace(/[^a-zA-Z0-9-]/g, '-');
+          data.abteilung = value;
           data.abteilungPing = value;
         }
       } else if (['grund', 'patient', 'telefon', 'sonstiges'].includes(field)) {
@@ -158,217 +305,20 @@ userbot.on('messageCreate', async (message) => {
     }
   }
 
-  if (!data.grund || !data.patient) {
-    console.log(`(Userbot) Fehler: Grund oder Patient fehlt in Kanal ${message.channel.name} (${message.channel.id})`, message.content);
+  if (!data.grund || !data.patient || !data.abteilung || !departmentConfig[data.abteilung]) {
+    console.log(`(Bot) Fehler: Grund, Patient oder ungültige Abteilung fehlt in Kanal ${message.channel.id}`);
     return;
   }
 
-  const ticketName = `{${data.grund}_${data.patient}}`;
-  try {
-    await message.channel.send(`$ticket ${ticketName}`);
-    console.log(`(Userbot) Befehl gesendet: $ticket ${ticketName} in Kanal ${message.channel.name} (${message.channel.id})`);
-    ticketDataStore.set(message.id, data);
-    console.log(`(Userbot) Ticket-Daten gespeichert für Nachricht ${message.id}:`, data);
-  } catch (err) {
-    console.error(`(Userbot) Fehler beim Erstellen eines Tickets in Kanal ${message.channel.name} (${message.channel.id}):`, err);
+  const departmentConfigEntry = departmentConfig[data.abteilung];
+  if (!departmentConfigEntry) {
+    console.log(`(Bot) Ungültige Abteilung: ${data.abteilung}`);
+    return;
   }
-});
 
-userbot.on('channelCreate', async (channel) => {
-  if (channel.parentId !== ALLOWED_CATEGORY_ID) return;
+  const categoryId = departmentConfigEntry.categoryId;
+  const memberRoleId = departmentConfigEntry.memberRoleId;
 
-  console.log(`(Userbot) Ticket-Kanal erkannt: ${channel.name} (${channel.id})`);
-
-  setTimeout(async () => {
-    try {
-      const messages = await channel.messages.fetch({ limit: 10 });
-      const firstMessage = messages.first();
-
-      if (!firstMessage) {
-        console.log(`(Userbot) Keine Nachrichten in Kanal ${channel.name} (${channel.id})`);
-        return;
-      }
-
-      console.log(`(Userbot) Erste Nachricht in Kanal ${channel.name} (${channel.id}): Autor=${firstMessage.author.id}, Inhalt=${firstMessage.content}, Embeds=${firstMessage.embeds.length}`);
-
-      const data = {
-        abteilung: '', grund: '', patient: '', telefon: '', sonstiges: '', abteilungPing: '',
-        buttonMessageId: null, appointmentMessageId: null, completedMessageId: null,
-        avpsMessageId: null, embedMessageId: null,
-        appointmentDate: null, appointmentTime: null, acceptedBy: null, avpsLink: null,
-        appointmentCompleted: false, isClosed: false, lastReset: false
-      };
-
-      let isManualTicket = false;
-      let cleanAbteilung = 'Nicht angegeben';
-      if (firstMessage.author.id === TICKET_TOOL_BOT_ID) {
-        const embed = firstMessage.embeds.find(e => e.description);
-        if (embed && embed.description) {
-          const desc = embed.description;
-          const patientMatch = desc.match(/\*\*Patientenname:\*\* ```\s*([\s\S]*?)```/);
-          const concernMatch = desc.match(/\*\*Anliegen:\*\* ```\s*([\s\S]*?)```/);
-          if (patientMatch && concernMatch) {
-            isManualTicket = true;
-            data.patient = patientMatch[1].trim() || 'Nicht angegeben';
-            data.grund = concernMatch[1].trim() || 'Nicht angegeben';
-            data.sonstiges = desc.match(/\*\*Aktivitätszeiten:\*\* ```\s*([\s\S]*?)```/)?.[1].trim() || 'Nicht angegeben';
-            data.telefon = desc.match(/\*\*Telfonnummer für Rückfragen:\*\* ```\s*([\s\S]*?)```/)?.[1].trim() || 'Nicht angegeben';
-
-            const roleIdMatch = firstMessage.content.match(/<@&(\d+)>/);
-            const roleId = roleIdMatch ? roleIdMatch[1] : null;
-            if (roleId) {
-              const role = await channel.guild.roles.fetch(roleId).catch((err) => {
-                console.error(`(Userbot) Fehler beim Abrufen der Rolle ${roleId}:`, err);
-                return null;
-              });
-              data.abteilung = role ? `<@&${roleId}>` : 'Nicht angegeben';
-              data.abteilungPing = role ? `<@&${roleId}>` : 'Nicht angegeben';
-              cleanAbteilung = role ? role.name.replace(/[^a-zA-Z0-9-]/g, '-') : 'Nicht angegeben';
-            } else {
-              data.abteilung = 'Nicht angegeben';
-              data.abteilungPing = 'Nicht angegeben';
-            }
-
-            ticketDataStore.set(firstMessage.id, data);
-            console.log(`(Userbot) Daten aus Embed extrahiert und in ticketDataStore gespeichert für Nachricht ${firstMessage.id} in Kanal ${channel.name} (${channel.id})`, data);
-          }
-        }
-      }
-
-      if (!isManualTicket) {
-        const latestTicketData = Array.from(ticketDataStore.entries())
-            .reverse()
-            .find(([_, data]) => data.grund && data.patient);
-        if (!latestTicketData) {
-          console.log(`(Userbot) Keine Ticket-Daten für automatisches Ticket in Kanal ${channel.name} (${channel.id})`);
-          return;
-        }
-        Object.assign(data, latestTicketData[1]);
-
-        if (data.abteilungPing && data.abteilungPing !== 'Nicht angegeben') {
-          const roleIdMatch = data.abteilungPing.match(/<@&(\d+)>/);
-          const roleId = roleIdMatch ? roleIdMatch[1] : null;
-          if (roleId) {
-            const role = await channel.guild.roles.fetch(roleId).catch((err) => {
-              console.error(`(Userbot) Fehler beim Abrufen der Rolle ${roleId} für automatisches Ticket:`, err);
-              return null;
-            });
-            data.abteilung = `<@&${roleId}>`;
-            console.log(`(Userbot) Rolle aufgelöst für automatisches Ticket: ${role ? role.name : 'Nicht gefunden'} (${roleId})`);
-          } else {
-            data.abteilung = 'Nicht angegeben';
-          }
-        } else {
-          data.abteilung = 'Nicht angegeben';
-        }
-        console.log(`(Userbot) Automatische Ticket-Daten geladen für Kanal ${channel.name} (${channel.id})`, data);
-      }
-
-      let roleId = null;
-      if (isManualTicket) {
-        const roleIdMatch = firstMessage.content.match(/<@&(\d+)>/);
-        roleId = roleIdMatch ? roleIdMatch[1] : null;
-      } else if (data.abteilungPing && data.abteilungPing !== 'Nicht angegeben') {
-        const roleIdMatch = data.abteilungPing.match(/<@&(\d+)>/);
-        roleId = roleIdMatch ? roleIdMatch[1] : null;
-      }
-      if (roleId) {
-        await channel.send(`$add ${roleId}`);
-        console.log(`(Userbot) Rolle hinzugefügt: $add ${roleId} in Kanal ${channel.name} (${channel.id})`);
-      }
-
-      setTimeout(async () => {
-        try {
-          if (data.patient) {
-            const cleanPatient = data.patient.replace(/[, ]/g, '');
-            const ticketName = isManualTicket
-                ? `ticket_${cleanAbteilung}_${cleanPatient}`
-                : `${data.grund}_${cleanPatient}`;
-            await channel.send(`$rename ${ticketName}`);
-            console.log(`(Userbot) Ticket umbenannt: ${ticketName} in Kanal ${channel.name} (${channel.id})`);
-          }
-
-          const messages = await channel.messages.fetch({ limit: 10 });
-          const ticketToolMessages = messages.filter(msg => msg.author.id === TICKET_TOOL_BOT_ID).first(2);
-
-          for (const msg of ticketToolMessages) {
-            await msg.delete();
-            console.log(`(Userbot) Ticket Tool Nachricht gelöscht: ${msg.id} in Kanal ${channel.name} (${channel.id})`);
-          }
-        } catch (err) {
-          console.error(`(Userbot) Fehler beim Umbenennen/Löschen in Kanal ${channel.name} (${channel.id}):`, err);
-        }
-      }, 1000); // Reduziert von 2000 ms auf 1000 ms
-    } catch (err) {
-      console.error(`(Userbot) Fehler beim Verarbeiten des Kanals ${channel.name} (${channel.id}):`, err);
-    }
-  }, 1000); // Reduziert von 3000 ms auf 1000 ms
-});
-
-// === Bot: Embed und Buttons in neuem Ticket-Kanal ===
-bot.on('ready', () => console.log(`(Bot) Eingeloggt als ${bot.user.tag}`));
-
-bot.on('channelCreate', async (channel) => {
-  if (channel.parentId !== ALLOWED_CATEGORY_ID) return;
-
-  console.log(`(Bot) Neuer Ticket-Kanal: ${channel.name} (${channel.id})`);
-
-  setTimeout(async () => {
-    try {
-      const latestTicketData = Array.from(ticketDataStore.entries()).pop();
-      if (!latestTicketData) {
-        console.log(`(Bot) Keine Ticket-Daten in Kanal ${channel.name} (${channel.id})`);
-        return;
-      }
-
-      const [, data] = latestTicketData;
-      const ticketReasons = {
-        ticket_arbeitsmedizinisches_polizei: 'Arbeitsmedizinisches Gutachten Polizeibewerber',
-        ticket_arbeitsmedizinisches_jva: 'Arbeitsmedizinisches Gutachten JVA/Wachschutz',
-        ticket_arbeitsmedizinisches_ammunation: 'Arbeitsmedizinisches Gutachten Ammunation',
-        ticket_arbeitsmedizinisches_mediziner: 'Arbeitsmedizinisches Gutachten Mediziner',
-        ticket_psycholgie_bundeswehr: 'Psychologisches Gutachten Bundeswehr',
-        ticket_psychologie_jva: 'Psychologisches Gutachten JVA',
-      };
-
-      const isAutomaticTicket = Object.keys(ticketReasons).includes(data.grund);
-      const embedTitle = isAutomaticTicket
-          ? `Behandlungsanfrage für ${ticketReasons[data.grund] || data.grund}`
-          : `Behandlungsanfrage für ${data.abteilung.replace(/<@&(\d+)>/, 'Abteilung')}`;
-
-      const fields = [
-        { name: 'Abteilung', value: data.abteilungPing || 'Nicht angegeben', inline: false },
-        { name: 'Grund', value: isAutomaticTicket ? ticketReasons[data.grund] || data.grund : data.grund || 'Nicht angegeben', inline: false },
-        { name: 'Patient', value: data.patient || 'Nicht angegeben', inline: false },
-        { name: 'Telefon', value: data.telefon || 'Nicht angegeben', inline: false },
-        { name: 'Sonstiges', value: data.sonstiges || 'Nicht angegeben', inline: false }
-      ];
-
-      const embed = new EmbedBuilder()
-          .setTitle(embedTitle)
-          .setColor(0x480007)
-          .addFields(fields);
-
-      const embedMessage = await channel.send({
-        content: `Eine neue Behandlungsanfrage (${data.abteilungPing})`,
-        embeds: [embed],
-        components: getButtonRows(data)
-      });
-
-      data.embedMessageId = embedMessage.id;
-      data.buttonMessageId = embedMessage.id;
-      console.log(`(Bot) Embed mit Buttons gesendet: ${embedMessage.id} in Kanal ${channel.name} (${channel.id})`);
-    } catch (err) {
-      console.error(`(Bot) Fehler beim Senden des Embeds in Kanal ${channel.name} (${channel.id}):`, err);
-    }
-  }, 7000); // Bleibt bei 7000 ms, da es wichtig ist, dass der Kanal vollständig erstellt ist
-});
-
-// === Interaction Handlers ===
-bot.on('interactionCreate', async (interaction) => {
-  const channelName = interaction.channel?.name || 'Unbekannt';
-  const channelId = interaction.channel?.id || 'Unbekannt';
-  const userTag = interaction.user?.tag || 'Unbekannt';
   const ticketReasons = {
     ticket_arbeitsmedizinisches_polizei: 'Arbeitsmedizinisches Gutachten Polizeibewerber',
     ticket_arbeitsmedizinisches_jva: 'Arbeitsmedizinisches Gutachten JVA/Wachschutz',
@@ -378,615 +328,480 @@ bot.on('interactionCreate', async (interaction) => {
     ticket_psychologie_jva: 'Psychologisches Gutachten JVA',
   };
 
-  if (interaction.isButton() && interaction.customId === 'takeover_ticket_button') {
-    try {
-      const modal = new ModalBuilder()
-          .setCustomId('takeover_user_modal')
-          .setTitle('Benutzer auswählen')
-          .addComponents(
-              new ActionRowBuilder().addComponents(
-                  new TextInputBuilder()
-                      .setCustomId('user_input')
-                      .setLabel('Nickname oder Nummer (z.B. 30 für [30])')
-                      .setStyle(TextInputStyle.Short)
-                      .setRequired(true)
-              )
-          );
+  const isAutomaticTicket = Object.keys(ticketReasons).includes(data.grund);
+  const channelName = isAutomaticTicket
+      ? `${data.grund.split('_').slice(1).join('_')}-${data.patient.replace(/ /g, '-')}`
+      : `${data.patient.replace(/ /g, '-')}`;
 
-      await interaction.showModal(modal);
-      console.log(`(Bot) Modal für Benutzerauswahl geöffnet in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler beim Öffnen des Modals (takeover_user) in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-      await interaction.reply({ content: 'Fehler beim Öffnen des Modals. Bitte versuche es erneut.', ephemeral: true });
-    }
+  const guild = message.guild;
+  const channel = await guild.channels.create({
+    name: `🆕 ${channelName}`,
+    type: 0,
+    parent: categoryId,
+    permissionOverwrites: [
+      { id: guild.id, deny: ['ViewChannel'] },
+      { id: memberRoleId, allow: ['ViewChannel', 'SendMessages'] },
+    ],
+  });
+
+  ticketDataStore.set(channel.id, data);
+  saveTicketData();
+
+  const embedTitle = isAutomaticTicket ? `Behandlungsanfrage für ${ticketReasons[data.grund] || data.grund}` : `Behandlungsanfrage für ${data.abteilungPing || data.abteilung}`;
+  const embed = new EmbedBuilder()
+      .setTitle(embedTitle)
+      .setColor(0x480007)
+      .addFields(createEmbedFields(data, ticketReasons));
+
+  const embedMessage = await channel.send({
+    content: `Eine neue Behandlungsanfrage (${data.abteilungPing || data.abteilung})`,
+    embeds: [embed],
+    components: getButtonRows(data),
+  });
+
+  data.embedMessageId = embedMessage.id;
+  saveTicketData();
+  console.log(`(Bot) Ticket erstellt und Embed gesendet in ${channel.name} (${channel.id})`);
+});
+
+bot.on('interactionCreate', async (interaction) => {
+  console.log(`(Bot) Interaktion empfangen: ${interaction.customId}`);
+  if (interaction.isButton() && interaction.customId.startsWith('create_ticket_')) {
+    const department = interaction.customId.split('_')[2].charAt(0).toUpperCase() + interaction.customId.split('_')[2].slice(1);
+    const modal = new ModalBuilder()
+        .setCustomId(`create_ticket_modal_${department.toLowerCase()}`)
+        .setTitle(`Ticket erstellen - ${department}`)
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('grund_input').setLabel('Grund').setStyle(TextInputStyle.Short).setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('patient_input').setLabel('Patient').setStyle(TextInputStyle.Short).setRequired(true)
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('telefon_input').setLabel('Telefon').setStyle(TextInputStyle.Short).setRequired(false)
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('sonstiges_input').setLabel('Sonstiges').setStyle(TextInputStyle.Paragraph).setRequired(false)
+            )
+        );
+    await interaction.showModal(modal);
   }
 
-  if (interaction.isModalSubmit() && interaction.customId === 'takeover_user_modal') {
-    try {
-      await interaction.deferUpdate();
-      const userInput = interaction.fields.getTextInputValue('user_input')?.trim();
-      const { mention: selectedUser, nickname } = await findUserInGuild(interaction.guild, userInput);
-      const currentUserMention = `<@${interaction.user.id}>`;
+  if (interaction.isModalSubmit() && interaction.customId.startsWith('create_ticket_modal_')) {
+    const abteilung = interaction.customId.split('_')[3].charAt(0).toUpperCase() + interaction.customId.split('_')[3].slice(1);
+    const grund = interaction.fields.getTextInputValue('grund_input')?.trim();
+    const patient = interaction.fields.getTextInputValue('patient_input')?.trim();
+    const telefon = interaction.fields.getTextInputValue('telefon_input')?.trim();
+    const sonstiges = interaction.fields.getTextInputValue('sonstiges_input')?.trim();
 
-      const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId);
-      if (!ticketData) {
-        console.warn(`(Bot) Kein ticketData in Kanal ${channelName} (${channelId}) von ${userTag}`);
-        await interaction.followUp({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true }).catch(() => {});
-        return;
-      }
-
-      let embedMessage;
-      try {
-        embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
-      } catch (err) {
-        if (err.code === 10008) {
-          const newEmbed = new EmbedBuilder()
-              .setTitle(`Behandlungsanfrage für ${ticketData.abteilung}`)
-              .setColor('#FF0000')
-              .addFields(createEmbedFields(ticketData, ticketReasons));
-          embedMessage = await interaction.channel.send({ embeds: [newEmbed], components: getButtonRows(ticketData) });
-          ticketData.embedMessageId = embedMessage.id;
-          console.log(`(Bot) Neue Embedded-Nachricht erstellt: ${ticketData.embedMessageId} in Kanal ${channelName} (${channelId})`);
-        } else {
-          throw err;
-        }
-      }
-
-      ticketData.acceptedBy = selectedUser;
-      ticketData.nickname = nickname;
-      ticketData.lastReset = false;
-      const currentEmbed = embedMessage.embeds[0];
-      const updatedEmbed = new EmbedBuilder()
-          .setTitle(currentEmbed.title)
-          .setColor(currentEmbed.color)
-          .addFields(createEmbedFields(ticketData, ticketReasons));
-
-      await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
-      const messageContent = selectedUser === currentUserMention
-          ? `[${getTimestamp()}] ${currentUserMention} hat das Ticket übernommen.`
-          : `[${getTimestamp()}] ${currentUserMention} hat das Ticket ${selectedUser} zugewiesen.`;
-      await interaction.channel.send({ content: messageContent });
-      console.log(`(Bot) Embed aktualisiert (Benutzerübernahme) in Nachricht ${ticketData.embedMessageId} in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler beim Modal-Submit (takeover_user) in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-      await interaction.followUp({ content: 'Fehler beim Übernehmen des Tickets.', ephemeral: true }).catch(() => {});
+    if (!grund || !patient) {
+      await interaction.reply({ content: 'Grund und Patient sind erforderlich.', ephemeral: true });
+      return;
     }
-  }
 
-  if (interaction.isButton() && interaction.customId === 'call_attempt_button') {
-    try {
-      const timestamp = getTimestamp();
-      await interaction.channel.send(`[${timestamp}] ${interaction.user} hat versucht anzurufen.`);
-      const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
-      if (ticketData) {
-        ticketData.lastReset = false;
-        const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
-        await embedMessage.edit({ embeds: [embedMessage.embeds[0]], components: getButtonRows(ticketData) });
-      }
-      await interaction.deferUpdate();
-      console.log(`(Bot) Button geklickt (call_attempt) in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler bei Button (call_attempt) in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
+    const departmentConfigEntry = departmentConfig[abteilung];
+    if (!departmentConfigEntry) {
+      await interaction.reply({ content: `Ungültige Abteilung: ${abteilung}`, ephemeral: true });
+      return;
     }
-  }
 
-  if (interaction.isButton() && interaction.customId === 'schedule_appointment_button') {
-    try {
-      const modal = new ModalBuilder()
-          .setCustomId('schedule_appointment_modal')
-          .setTitle('Termin festlegen')
-          .addComponents(
-              new ActionRowBuilder().addComponents(
-                  new TextInputBuilder()
-                      .setCustomId('date_input')
-                      .setLabel('Datum (DD.MM.YYYY, z.B. 31.05.2025)')
-                      .setStyle(TextInputStyle.Short)
-                      .setRequired(false)
-              ),
-              new ActionRowBuilder().addComponents(
-                  new TextInputBuilder()
-                      .setCustomId('time_input')
-                      .setLabel('Uhrzeit (z.B. 14:30)')
-                      .setStyle(TextInputStyle.Short)
-                      .setRequired(false)
-              )
-          );
+    const channel = await interaction.guild.channels.create({
+      name: `${patient.replace(/ /g, '-')}`,
+      type: 0,
+      parent: departmentConfigEntry.categoryId,
+      permissionOverwrites: [
+        { id: interaction.guild.id, deny: ['ViewChannel'] },
+        { id: departmentConfigEntry.memberRoleId, allow: ['ViewChannel', 'SendMessages'] },
+      ],
+    });
 
-      await interaction.showModal(modal);
-      console.log(`(Bot) Modal für Termin festlegen geöffnet in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler beim Öffnen des Modals (schedule_appointment) in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-    }
+    const data = {
+      abteilung, grund, patient, telefon, sonstiges, abteilungPing: `<@&${departmentConfigEntry.memberRoleId}>`,
+      buttonMessageId: null, appointmentMessageId: null, completedMessageId: null,
+      avpsMessageId: null, embedMessageId: null,
+      appointmentDate: null, appointmentTime: null, acceptedBy: null, avpsLink: null,
+      appointmentCompleted: false, isClosed: false, lastReset: false, callAttempt: false
+    };
+
+    ticketDataStore.set(channel.id, data);
+    saveTicketData();
+
+    const embed = new EmbedBuilder()
+        .setTitle(`Behandlungsanfrage für ${data.abteilungPing}`)
+        .setColor(0x480007)
+        .addFields(createEmbedFields(data, {}));
+
+    const embedMessage = await channel.send({
+      content: `Eine neue Behandlungsanfrage (${data.abteilungPing})`,
+      embeds: [embed],
+      components: getButtonRows(data),
+    });
+
+    data.embedMessageId = embedMessage.id;
+    saveTicketData();
+
+    const confirmationEmbed = new EmbedBuilder()
+        .setTitle('Ticket erfolgreich erstellt')
+        .setColor(0x00FF00)
+        .addFields([
+          { name: 'Abteilung', value: data.abteilungPing, inline: false },
+          { name: 'Grund', value: grund, inline: false },
+          { name: 'Patient', value: patient, inline: false },
+          { name: 'Telefon', value: telefon || 'Nicht angegeben', inline: false },
+          { name: 'Sonstiges', value: sonstiges || 'Nicht angegeben', inline: false },
+        ]);
+
+    await interaction.reply({ embeds: [confirmationEmbed], ephemeral: true });
+    await updateChannelName(channel, data);
   }
 
   if (interaction.isButton() && interaction.customId === 'close_ticket_button') {
-    try {
-      await userbot.channels.cache.get(interaction.channel.id).send('$close');
-      console.log(`(Bot) $close Befehl gesendet in Kanal ${channelName} (${channelId}) von ${userTag}`);
-
-      const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId);
-      if (ticketData && ticketData.embedMessageId) {
-        try {
-          const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
-          ticketData.isClosed = true;
-          await embedMessage.edit({ embeds: [embedMessage.embeds[0]], components: getButtonRows(ticketData) });
-          console.log(`(Bot) Embed aktualisiert (Ticket geschlossen) in Nachricht ${ticketData.embedMessageId} in Kanal ${channelName} (${channelId})`);
-        } catch (err) {
-          if (err.code !== 10008) throw err;
-          console.warn(`(Bot) Nachricht ${ticketData.embedMessageId} nicht gefunden in Kanal ${channelName} (${channelId})`);
-        }
-      }
-
-      await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat das Ticket geschlossen.`);
-      console.log(`(Bot) Normale Bestätigungsnachricht gesendet in Kanal ${channelName} (${channelId})`);
-
-      setTimeout(async () => {
-        try {
-          if (!ticketData || !ticketData.embedMessageId || !TICKET_TOOL_BOT_ID) {
-            console.warn('(Bot) Ungültige Konfiguration oder fehlende ticketData.embedMessageId – überspringe Cleanup');
-            return;
-          }
-
-          console.log(`(Bot) Cleanup gestartet.`);
-
-          const messages = await interaction.channel.messages.fetch({ limit: 100 });
-          const ticketToolMessages = messages.filter(msg => {
-            const isTicketTool = msg.author.id === TICKET_TOOL_BOT_ID;
-            const isNotCreatorEmbed = msg.author.id !== TICKET_CREATOR_BOT_ID;
-            const isNotEmbedMsg = msg.id !== ticketData.embedMessageId;
-            return isTicketTool && isNotCreatorEmbed && isNotEmbedMsg;
-          });
-
-          console.log(`(Bot) Gefundene Nachrichten von TICKET_TOOL_BOT_ID: ${ticketToolMessages.size} in Kanal ${channelName} (${channelId})`);
-          console.log(`→ Zu löschende IDs: ${ticketToolMessages.map(m => m.id).join(', ')}`);
-
-          for (const msg of ticketToolMessages.values()) {
-            try {
-              await msg.delete();
-              console.log(`(Bot) Nachricht gelöscht: ${msg.id} (Embed: ${msg.embeds.length > 0}) in Kanal ${channelName} (${channelId})`);
-            } catch (deleteErr) {
-              console.error(`(Bot) Fehler beim Löschen der Nachricht ${msg.id} in Kanal ${channelName} (${channelId}):`, deleteErr);
-            }
-          }
-        } catch (err) {
-          console.error(`(Bot) Fehler beim Laden oder Löschen von TICKET_TOOL Nachrichten in Kanal ${channelName} (${channelId}):`, err);
-        }
-      }, 5000); // Reduziert von 10000 ms auf 5000 ms
-
-      console.log(`(Bot) Ticket geschlossen in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler beim Schließen in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-      await interaction.reply({ content: 'Fehler beim Schließen des Tickets.', ephemeral: true }).catch(() => {});
+    const ticketData = ticketDataStore.get(interaction.channel.id);
+    if (!ticketData) {
+      await interaction.reply({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
+      return;
     }
+
+    const department = ticketData.abteilung;
+    const config = departmentConfig[department];
+    await interaction.channel.permissionOverwrites.edit(config.memberRoleId, { SendMessages: false });
+    await interaction.channel.permissionOverwrites.edit(config.leaderRoleId, { ViewChannel: true, SendMessages: true });
+    await interaction.channel.permissionOverwrites.edit('1378976725903343657', { ViewChannel: true, SendMessages: true });
+    await interaction.channel.permissionOverwrites.edit('1378976807432359986', { ViewChannel: true, SendMessages: true });
+
+    ticketData.isClosed = true;
+    saveTicketData();
+
+    const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
+    await embedMessage.edit({ components: getButtonRows(ticketData) });
+    await updateChannelName(interaction.channel, ticketData);
+    await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat das Ticket geschlossen.`);
+    await interaction.deferUpdate();
   }
 
   if (interaction.isButton() && interaction.customId === 'reopen_ticket_button') {
-    try {
-      console.log(`(Bot) Verarbeitung für Interaktion in Kanal ${channelName} (${channelId}) von ${userTag}`);
-
-      const originalMessageId = interaction.message.id;
-      try {
-        await interaction.channel.messages.fetch(originalMessageId);
-        console.log(`(Bot) Nachricht ${originalMessageId} existiert vor der Aktion in Kanal ${channelName} (${channelId})`);
-      } catch (err) {
-        console.error(`(Bot) Nachricht ${originalMessageId} existiert nicht mehr vor der Aktion:`, err);
-      }
-
-      await userbot.channels.cache.get(interaction.channel.id).send('$open');
-      console.log(`(Bot) $open Befehl gesendet in Kanal ${channelName} (${channelId}) von ${userTag}`);
-
-      await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat das Ticket wieder geöffnet.`);
-
-      const ticketData = Array.from(ticketDataStore.entries())
-          .find(([_, data]) => data.embedMessageId === originalMessageId)?.[1];
-      if (ticketData) {
-        ticketData.isClosed = false;
-        const updatedComponents = getButtonRows(ticketData);
-        await interaction.message.edit({ components: updatedComponents });
-        console.log(`(Bot) Buttons aktualisiert für Nachricht ${originalMessageId} in Kanal ${channelName} (${channelId})`);
-      } else {
-        console.warn(`(Bot) Kein ticketData für Nachricht ${originalMessageId} gefunden in Kanal ${channelName} (${channelId})`);
-      }
-
-      await interaction.deferReply({ ephemeral: true });
-      await interaction.followUp({ content: 'Ticket erfolgreich wieder geöffnet.', ephemeral: true });
-
-      setTimeout(async () => {
-        try {
-          if (!ticketData || !ticketData.embedMessageId || !TICKET_TOOL_BOT_ID) {
-            console.warn('(Bot) Ungültige Konfiguration oder fehlende ticketData.embedMessageId – überspringe Cleanup');
-            return;
-          }
-
-          const messages = await interaction.channel.messages.fetch({ limit: 100 });
-          const ticketToolMessages = messages.filter(msg => {
-            const isTicketTool = msg.author.id === TICKET_TOOL_BOT_ID;
-            const isNotCreatorEmbed = msg.author.id !== TICKET_CREATOR_BOT_ID;
-            const isNotEmbedMsg = msg.id !== ticketData.embedMessageId;
-            return isTicketTool && isNotCreatorEmbed && isNotEmbedMsg;
-          });
-
-          console.log(`(Bot) Gefundene Nachrichten von TICKET_TOOL_BOT_ID: ${ticketToolMessages.size} in Kanal ${channelName} (${channelId})`);
-          console.log(`→ Zu löschende IDs: ${ticketToolMessages.map(m => m.id).join(', ')}`);
-
-          for (const msg of ticketToolMessages.values()) {
-            try {
-              await msg.delete();
-              console.log(`(Bot) Nachricht gelöscht: ${msg.id} (Embed: ${msg.embeds.length > 0}) in Kanal ${channelName} (${channelId})`);
-            } catch (deleteErr) {
-              console.error(`(Bot) Fehler beim Löschen der Nachricht ${msg.id} in Kanal ${channelName} (${channelId}):`, deleteErr);
-            }
-          }
-        } catch (err) {
-          console.error(`(Bot) Fehler beim Laden oder Löschen von TICKET_TOOL Nachrichten in Kanal ${channelName} (${channelId}):`, err);
-        }
-      }, 5000); // Reduziert von 6000 ms auf 5000 ms
-
-      setTimeout(() => interaction.deleteReply().catch(() => {}), 5000);
-      console.log(`(Bot) Benachrichtigung gesendet in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler beim Wiederöffnen in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-      await interaction.followUp({ content: 'Fehler beim Wiederöffnen des Tickets.', ephemeral: true }).catch(() => {});
+    const ticketData = ticketDataStore.get(interaction.channel.id);
+    if (!ticketData) {
+      await interaction.reply({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
+      return;
     }
+
+    const config = departmentConfig[ticketData.abteilung];
+    await interaction.channel.permissionOverwrites.edit(config.memberRoleId, { SendMessages: true });
+
+    ticketData.isClosed = false;
+    saveTicketData();
+
+    const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
+    await embedMessage.edit({ components: getButtonRows(ticketData) });
+    await updateChannelName(interaction.channel, ticketData);
+    await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat das Ticket wieder geöffnet.`);
+    await interaction.deferUpdate();
   }
 
-  if (interaction.isButton() && interaction.customId === 'reset_ticket_button') {
-    try {
-      const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
-      if (ticketData && ticketData.embedMessageId) {
-        ticketData.acceptedBy = null;
-        ticketData.nickname = null;
-        ticketData.appointmentDate = null;
-        ticketData.appointmentTime = null;
-        ticketData.appointmentCompleted = false;
-        ticketData.avpsLink = null;
-        ticketData.lastReset = true;
-
-        const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
-        const currentEmbed = embedMessage.embeds[0];
-        const updatedEmbed = new EmbedBuilder()
-            .setTitle(currentEmbed.title)
-            .setColor(currentEmbed.color)
-            .addFields(createEmbedFields(ticketData, ticketReasons));
-        await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
-        console.log(`(Bot) Embed zurückgesetzt in Nachricht ${ticketData.embedMessageId} in Kanal ${channelName} (${channelId})`);
-
-        await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat das Ticket zurückgesetzt.\n──────────────────────────`);
-      }
-
-      await interaction.deferUpdate();
-      console.log(`(Bot) Ticket zurückgesetzt in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler beim Zurücksetzen des Tickets in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-      await interaction.followUp({ content: 'Fehler beim Zurücksetzen des Tickets.', ephemeral: true }).catch(() => {});
+  if (interaction.isButton() && interaction.customId === 'delete_ticket_button') {
+    const ticketData = ticketDataStore.get(interaction.channel.id);
+    if (!ticketData) {
+      await interaction.reply({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
+      return;
     }
+
+    const config = departmentConfig[ticketData.abteilung];
+    const member = interaction.member;
+    const isAdmin = member.roles.cache.has('1378976725903343657') || member.roles.cache.has('1378976807432359986');
+    const isLeader = member.roles.cache.has(config.leaderRoleId);
+    const canDelete = isAdmin || (isLeader && ticketData.isClosed);
+
+    if (!canDelete) {
+      await interaction.reply({ content: 'Du hast keine Berechtigung, dieses Ticket zu löschen. Nur Admins oder Abteilungsleiter (bei geschlossenen Tickets) dürfen löschen.', ephemeral: true });
+      return;
+    }
+
+    archiveTicketData(interaction.channel.id, ticketData);
+    const logChannel = bot.channels.cache.get(LOG_CHANNEL_ID);
+    if (logChannel) await logChannel.send(`Ticket ${interaction.channel.id} wurde von ${interaction.user} gelöscht. Abteilung: ${ticketData.abteilung}, Patient: ${ticketData.patient}`);
+    await interaction.channel.delete();
+    ticketDataStore.delete(interaction.channel.id);
+    saveTicketData();
   }
 
-  if (interaction.isButton() && interaction.customId === 'no_show_button') {
-    try {
-      const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
-      if (ticketData && ticketData.embedMessageId) {
-        ticketData.appointmentDate = null;
-        ticketData.appointmentTime = null;
-        ticketData.appointmentCompleted = false;
-        ticketData.lastReset = false;
-        const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
-        const currentEmbed = embedMessage.embeds[0];
-        const updatedEmbed = new EmbedBuilder()
-            .setTitle(currentEmbed.title)
-            .setColor(currentEmbed.color)
-            .addFields(createEmbedFields(ticketData, ticketReasons));
-        await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
-        console.log(`(Bot) Embed aktualisiert (Termin entfernt) in Nachricht ${ticketData.embedMessageId} in Kanal ${channelName} (${channelId})`);
-      }
-
-      await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat angegeben, dass der Patient nicht zum Termin erschienen ist.`);
-      await interaction.deferUpdate();
-      console.log(`(Bot) Button geklickt (no_show) in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler bei Button (no_show) in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-    }
+  if (interaction.isButton() && interaction.customId === 'takeover_ticket_button') {
+    const modal = new ModalBuilder()
+        .setCustomId('takeover_user_modal')
+        .setTitle('Benutzer auswählen')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('user_input').setLabel('Nickname oder Nummer').setStyle(TextInputStyle.Short).setRequired(true)
+            )
+        );
+    await interaction.showModal(modal);
   }
 
-  if (interaction.isButton() && interaction.customId === 'reschedule_appointment_button') {
-    try {
-      const modal = new ModalBuilder()
-          .setCustomId('reschedule_appointment_modal')
-          .setTitle('Termin umlegen')
-          .addComponents(
-              new ActionRowBuilder().addComponents(
-                  new TextInputBuilder()
-                      .setCustomId('date_input')
-                      .setLabel('Neues Datum (DD.MM.YYYY, z.B. 31.05.2025)')
-                      .setStyle(TextInputStyle.Short)
-                      .setRequired(false)
-              ),
-              new ActionRowBuilder().addComponents(
-                  new TextInputBuilder()
-                      .setCustomId('time_input')
-                      .setLabel('Neue Uhrzeit (z.B. 14:30)')
-                      .setStyle(TextInputStyle.Short)
-                      .setRequired(false)
-              )
-          );
+  if (interaction.isModalSubmit() && interaction.customId === 'takeover_user_modal') {
+    await interaction.deferUpdate();
+    const userInput = interaction.fields.getTextInputValue('user_input')?.trim();
+    const { mention: selectedUser, nickname } = await findUserInGuild(interaction.guild, userInput);
+    const ticketData = ticketDataStore.get(interaction.channel.id);
+    if (!ticketData) return;
 
-      await interaction.showModal(modal);
-      console.log(`(Bot) Modal für Termin umlegen geöffnet in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler beim Öffnen des Modals (reschedule_appointment) in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-    }
+    ticketData.acceptedBy = selectedUser;
+    ticketData.nickname = nickname;
+    ticketData.lastReset = false;
+    saveTicketData();
+
+    const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
+    const updatedEmbed = new EmbedBuilder()
+        .setTitle(embedMessage.embeds[0].title)
+        .setColor(embedMessage.embeds[0].color)
+        .addFields(createEmbedFields(ticketData, {}));
+    await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
+    await updateChannelName(interaction.channel, ticketData);
+    await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat das Ticket ${selectedUser} zugewiesen.`);
   }
 
-  if (interaction.isButton() && interaction.customId === 'appointment_completed_button') {
-    try {
-      const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
-      if (ticketData && ticketData.embedMessageId) {
-        ticketData.appointmentCompleted = true;
-        ticketData.lastReset = false;
-        const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
-        const currentEmbed = embedMessage.embeds[0];
-        const updatedEmbed = new EmbedBuilder()
-            .setTitle(currentEmbed.title)
-            .setColor(currentEmbed.color)
-            .addFields(createEmbedFields(ticketData, ticketReasons));
-        await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
-        console.log(`(Bot) Embed aktualisiert (Termin erledigt) in Nachricht ${ticketData.embedMessageId} in Kanal ${channelName} (${channelId})`);
-      }
-
-      await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Termin erledigt.`);
-      await interaction.deferUpdate();
-      console.log(`(Bot) Termin erledigt in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler bei Button (appointment_completed) in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-    }
+  if (interaction.isButton() && interaction.customId === 'call_attempt_button') {
+    const ticketData = ticketDataStore.get(interaction.channel.id);
+    if (!ticketData) return;
+    ticketData.callAttempt = true;
+    ticketData.lastReset = false;
+    saveTicketData();
+    await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat versucht anzurufen.`);
+    const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
+    const updatedEmbed = new EmbedBuilder()
+        .setTitle(embedMessage.embeds[0].title)
+        .setColor(embedMessage.embeds[0].color)
+        .addFields(createEmbedFields(ticketData, {}));
+    await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
+    await updateChannelName(interaction.channel, ticketData);
+    await interaction.deferUpdate();
   }
 
-  if (interaction.isButton() && interaction.customId === 'avps_link_button') {
-    try {
-      const modal = new ModalBuilder()
-          .setCustomId('avps_link_modal')
-          .setTitle('AVPS Akte hinterlegen')
-          .addComponents(
-              new ActionRowBuilder().addComponents(
-                  new TextInputBuilder()
-                      .setCustomId('link_input')
-                      .setLabel('Link zur AVPS Akte')
-                      .setStyle(TextInputStyle.Short)
-                      .setRequired(true)
-              )
-          );
-
-      await interaction.showModal(modal);
-      console.log(`(Bot) Modal für AVPS Akte geöffnet in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler beim Öffnen des Modals (avps_link) in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-    }
-  }
-
-  if (interaction.isButton() && interaction.customId === 'edit_avps_link_button') {
-    try {
-      const modal = new ModalBuilder()
-          .setCustomId('edit_avps_link_modal')
-          .setTitle('AVPS Akte bearbeiten')
-          .addComponents(
-              new ActionRowBuilder().addComponents(
-                  new TextInputBuilder()
-                      .setCustomId('link_input')
-                      .setLabel('Neuer Link zur AVPS Akte')
-                      .setStyle(TextInputStyle.Short)
-                      .setRequired(true)
-              )
-          );
-
-      await interaction.showModal(modal);
-      console.log(`(Bot) Modal für AVPS Akte bearbeiten geöffnet in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler beim Öffnen des Modals (edit_avps_link) in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-    }
-  }
-
-  if (interaction.isButton() && interaction.customId === 'delete_avps_link_button') {
-    try {
-      const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
-      if (ticketData && ticketData.embedMessageId) {
-        ticketData.avpsLink = null;
-        ticketData.lastReset = false;
-        const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
-        const currentEmbed = embedMessage.embeds[0];
-        const updatedEmbed = new EmbedBuilder()
-            .setTitle(currentEmbed.title)
-            .setColor(currentEmbed.color)
-            .addFields(createEmbedFields(ticketData, ticketReasons));
-        await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
-        console.log(`(Bot) AVPS Link gelöscht in Nachricht ${ticketData.embedMessageId} in Kanal ${channelName} (${channelId})`);
-      }
-
-      await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat die AVPS Akte gelöscht.`);
-      await interaction.deferUpdate();
-      console.log(`(Bot) AVPS Akte gelöscht in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler beim Löschen der AVPS Akte in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-    }
+  if (interaction.isButton() && interaction.customId === 'schedule_appointment_button') {
+    const modal = new ModalBuilder()
+        .setCustomId('schedule_appointment_modal')
+        .setTitle('Termin festlegen')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('date_input').setLabel('Datum (DD.MM.YYYY)').setStyle(TextInputStyle.Short).setRequired(false)
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('time_input').setLabel('Uhrzeit (z.B. 14:30)').setStyle(TextInputStyle.Short).setRequired(false)
+            )
+        );
+    await interaction.showModal(modal);
   }
 
   if (interaction.isModalSubmit() && interaction.customId === 'schedule_appointment_modal') {
-    try {
-      let date = interaction.fields.getTextInputValue('date_input')?.trim() || '';
-      let time = interaction.fields.getTextInputValue('time_input')?.trim() || '';
-      const user = interaction.user;
+    const ticketData = ticketDataStore.get(interaction.channel.id);
+    if (!ticketData) return;
 
-      const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
-      if (!ticketData || !ticketData.embedMessageId) {
-        await interaction.followUp({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
-        console.warn(`(Bot) Kein ticketData in Kanal ${channelName} (${channelId}) von ${userTag}`);
-        return;
-      }
+    let date = interaction.fields.getTextInputValue('date_input')?.trim() || ticketData.appointmentDate || new Date().toLocaleDateString('de-DE');
+    let time = interaction.fields.getTextInputValue('time_input')?.trim() || ticketData.appointmentTime || new Date().toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
 
-      const now = new Date();
-      const defaultDate = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric' });
-      const defaultTime = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+    ticketData.appointmentDate = date;
+    ticketData.appointmentTime = time;
+    ticketData.appointmentCompleted = false;
+    ticketData.lastReset = false;
+    ticketData.callAttempt = false; // Entfernt ☎️ bei Termin
+    saveTicketData();
 
-      if (!date && ticketData.appointmentDate) {
-        date = ticketData.appointmentDate;
-      }
-      if (!time && ticketData.appointmentTime) {
-        time = ticketData.appointmentTime;
-      }
+    const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
+    const updatedEmbed = new EmbedBuilder()
+        .setTitle(embedMessage.embeds[0].title)
+        .setColor(embedMessage.embeds[0].color)
+        .addFields(createEmbedFields(ticketData, {}));
+    await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
+    await updateChannelName(interaction.channel, ticketData);
+    await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat einen Termin erstellt: ${date} - ${time}`);
+    await interaction.deferUpdate();
+  }
 
-      const finalDate = date || ticketData.appointmentDate || defaultDate;
-      const finalTime = time || ticketData.appointmentTime || defaultTime;
+  if (interaction.isButton() && interaction.customId === 'no_show_button') {
+    const ticketData = ticketDataStore.get(interaction.channel.id);
+    if (!ticketData) return;
 
-      const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
-      if (date && !dateRegex.test(date)) {
-        await interaction.channel.send(`[${getTimestamp()}] ${user.tag}, ungültiges Datumsformat. Bitte verwende DD.MM.YYYY. Alter Wert wird beibehalten.`);
-        console.log(`(Bot) Ungültiges Datumsformat in Kanal ${channelName} (${channelId}) von ${userTag}`);
-      } else {
-        ticketData.appointmentDate = finalDate;
-        ticketData.appointmentTime = finalTime;
-        ticketData.appointmentCompleted = false;
-        ticketData.lastReset = false;
+    ticketData.appointmentDate = null;
+    ticketData.appointmentTime = null;
+    ticketData.appointmentCompleted = false;
+    ticketData.lastReset = false;
+    saveTicketData();
 
-        const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
-        const currentEmbed = embedMessage.embeds[0];
-        const updatedEmbed = new EmbedBuilder()
-            .setTitle(currentEmbed.title)
-            .setColor(currentEmbed.color)
-            .addFields(createEmbedFields(ticketData, ticketReasons));
-        await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
-        console.log(`(Bot) Embed aktualisiert mit Termin in Nachricht ${ticketData.embedMessageId} in Kanal ${channelName} (${channelId})`);
+    const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
+    const updatedEmbed = new EmbedBuilder()
+        .setTitle(embedMessage.embeds[0].title)
+        .setColor(embedMessage.embeds[0].color)
+        .addFields(createEmbedFields(ticketData, {}));
+    await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
+    await updateChannelName(interaction.channel, ticketData);
+    await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat angegeben, dass der Patient nicht zum Termin erschienen ist.`);
+    await interaction.deferUpdate();
+  }
 
-        await interaction.channel.send(`[${getTimestamp()}] ${user} hat einen Termin erstellt: Datum ${finalDate}, Uhrzeit ${finalTime}`);
-      }
-
-      await interaction.deferUpdate();
-      console.log(`(Bot) Modal-Submit (schedule_appointment) in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler bei Modal-Submit (schedule_appointment) in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-      await interaction.followUp({ content: 'Fehler beim Erstellen des Termins.', ephemeral: true });
-    }
+  if (interaction.isButton() && interaction.customId === 'reschedule_appointment_button') {
+    const modal = new ModalBuilder()
+        .setCustomId('reschedule_appointment_modal')
+        .setTitle('Termin umlegen')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('date_input').setLabel('Neues Datum (DD.MM.YYYY)').setStyle(TextInputStyle.Short).setRequired(false)
+            ),
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('time_input').setLabel('Neue Uhrzeit (z.B. 14:30)').setStyle(TextInputStyle.Short).setRequired(false)
+            )
+        );
+    await interaction.showModal(modal);
   }
 
   if (interaction.isModalSubmit() && interaction.customId === 'reschedule_appointment_modal') {
-    try {
-      let date = interaction.fields.getTextInputValue('date_input')?.trim() || '';
-      let time = interaction.fields.getTextInputValue('time_input')?.trim() || '';
-      const user = interaction.user;
+    const ticketData = ticketDataStore.get(interaction.channel.id);
+    if (!ticketData) return;
 
-      const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
-      if (!ticketData || !ticketData.embedMessageId) {
-        await interaction.followUp({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
-        console.warn(`(Bot) Kein ticketData in Kanal ${channelName} (${channelId}) von ${userTag}`);
-        return;
-      }
+    let date = interaction.fields.getTextInputValue('date_input')?.trim() || ticketData.appointmentDate;
+    let time = interaction.fields.getTextInputValue('time_input')?.trim() || ticketData.appointmentTime;
 
-      const now = new Date();
-      const defaultDate = now.toLocaleDateString('de-DE', { day: '2-digit', month: '2-digit', year: 'numeric', timeZone: 'Europe/Berlin' });
-      const defaultTime = now.toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit', timeZone: 'Europe/Berlin' });
+    ticketData.appointmentDate = date;
+    ticketData.appointmentTime = time;
+    ticketData.appointmentCompleted = false;
+    ticketData.lastReset = false;
+    saveTicketData();
 
-      if (!date && ticketData.appointmentDate) {
-        date = ticketData.appointmentDate;
-      }
-      if (!time && ticketData.appointmentTime) {
-        time = ticketData.appointmentTime;
-      }
+    const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
+    const updatedEmbed = new EmbedBuilder()
+        .setTitle(embedMessage.embeds[0].title)
+        .setColor(embedMessage.embeds[0].color)
+        .addFields(createEmbedFields(ticketData, {}));
+    await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
+    await updateChannelName(interaction.channel, ticketData);
+    await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Termin umgelegt: ${date} - ${time}`);
+    await interaction.deferUpdate();
+  }
 
-      const finalDate = date || ticketData.appointmentDate || defaultDate;
-      const finalTime = time || ticketData.appointmentTime || defaultTime;
+  if (interaction.isButton() && interaction.customId === 'appointment_completed_button') {
+    const ticketData = ticketDataStore.get(interaction.channel.id);
+    if (!ticketData) return;
 
-      const dateRegex = /^\d{2}\.\d{2}\.\d{4}$/;
-      if (date && !dateRegex.test(date)) {
-        await interaction.channel.send(`[${getTimestamp()}] ${user.tag}, ungültiges Datumsformat. Bitte verwende DD.MM.YYYY. Alter Wert wird beibehalten.`);
-        console.log(`(Bot) Ungültiges Datumsformat in Kanal ${channelName} (${channelId}) von ${userTag}`);
-      } else {
-        ticketData.appointmentDate = finalDate;
-        ticketData.appointmentTime = finalTime;
-        ticketData.appointmentCompleted = false;
-        ticketData.lastReset = false;
+    ticketData.appointmentCompleted = true;
+    ticketData.lastReset = false;
+    saveTicketData();
 
-        const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
-        const currentEmbed = embedMessage.embeds[0];
-        const updatedEmbed = new EmbedBuilder()
-            .setTitle(currentEmbed.title)
-            .setColor(currentEmbed.color)
-            .addFields(createEmbedFields(ticketData, ticketReasons));
-        await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
-        console.log(`(Bot) Embed aktualisiert mit neuem Termin in Nachricht ${ticketData.embedMessageId} in Kanal ${channelName} (${channelId})`);
+    const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
+    const updatedEmbed = new EmbedBuilder()
+        .setTitle(embedMessage.embeds[0].title)
+        .setColor(embedMessage.embeds[0].color)
+        .addFields(createEmbedFields(ticketData, {}));
+    await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
+    await updateChannelName(interaction.channel, ticketData);
+    await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Termin erledigt.`);
+    await interaction.deferUpdate();
+  }
 
-        await interaction.channel.send(`[${getTimestamp()}] ${user} hat den Termin umgelegt: Datum ${finalDate}, Uhrzeit ${finalTime}`);
-      }
-
-      await interaction.deferUpdate();
-      console.log(`(Bot) Modal-Submit (reschedule_appointment) in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler bei Modal-Submit (reschedule_appointment) in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-      await interaction.followUp({ content: 'Fehler beim Umlegen des Termins.', ephemeral: true });
-    }
+  if (interaction.isButton() && interaction.customId === 'avps_link_button') {
+    const modal = new ModalBuilder()
+        .setCustomId('avps_link_modal')
+        .setTitle('AVPS Akte hinterlegen')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('link_input').setLabel('Link zur AVPS Akte').setStyle(TextInputStyle.Short).setRequired(true)
+            )
+        );
+    await interaction.showModal(modal);
   }
 
   if (interaction.isModalSubmit() && interaction.customId === 'avps_link_modal') {
-    try {
-      const link = interaction.fields.getTextInputValue('link_input')?.trim();
-      const user = interaction.user;
-      const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
-      if (ticketData && ticketData.embedMessageId) {
-        ticketData.avpsLink = link;
-        ticketData.lastReset = false;
-        const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
-        const currentEmbed = embedMessage.embeds[0];
-        const updatedEmbed = new EmbedBuilder()
-            .setTitle(currentEmbed.title)
-            .setColor(currentEmbed.color)
-            .addFields(createEmbedFields(ticketData, ticketReasons));
-        await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
-        console.log(`(Bot) Embed aktualisiert mit AVPS Link in Nachricht ${ticketData.embedMessageId} in Kanal ${channelName} (${channelId})`);
-      }
+    const ticketData = ticketDataStore.get(interaction.channel.id);
+    if (!ticketData) return;
 
-      await interaction.channel.send(`[${getTimestamp()}] ${user} hat die AVPS Akte hinterlegt: ${link}`);
-      await interaction.deferUpdate();
-      console.log(`(Bot) Modal-Submit (avps_link) in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler bei Modal-Submit (avps_link) in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-      await interaction.followUp({ content: 'Fehler beim Hinterlegen der AVPS Akte.', ephemeral: true });
-    }
+    ticketData.avpsLink = interaction.fields.getTextInputValue('link_input')?.trim();
+    ticketData.lastReset = false;
+    saveTicketData();
+
+    const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
+    const updatedEmbed = new EmbedBuilder()
+        .setTitle(embedMessage.embeds[0].title)
+        .setColor(embedMessage.embeds[0].color)
+        .addFields(createEmbedFields(ticketData, {}));
+    await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
+    await updateChannelName(interaction.channel, ticketData);
+    await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat die AVPS Akte hinterlegt: ${ticketData.avpsLink}`);
+    await interaction.deferUpdate();
+  }
+
+  if (interaction.isButton() && interaction.customId === 'edit_avps_link_button') {
+    const modal = new ModalBuilder()
+        .setCustomId('edit_avps_link_modal')
+        .setTitle('AVPS Akte bearbeiten')
+        .addComponents(
+            new ActionRowBuilder().addComponents(
+                new TextInputBuilder().setCustomId('link_input').setLabel('Neuer Link zur AVPS Akte').setStyle(TextInputStyle.Short).setRequired(true)
+            )
+        );
+    await interaction.showModal(modal);
   }
 
   if (interaction.isModalSubmit() && interaction.customId === 'edit_avps_link_modal') {
-    try {
-      const newLink = interaction.fields.getTextInputValue('link_input')?.trim();
-      const user = interaction.user;
-      const ticketData = Array.from(ticketDataStore.values()).find(data => data.embedMessageId === interaction.message.id);
-      if (ticketData && ticketData.embedMessageId) {
-        ticketData.avpsLink = newLink;
-        ticketData.lastReset = false;
-        const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
-        const currentEmbed = embedMessage.embeds[0];
-        const updatedEmbed = new EmbedBuilder()
-            .setTitle(currentEmbed.title)
-            .setColor(currentEmbed.color)
-            .addFields(createEmbedFields(ticketData, ticketReasons));
-        await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
-        console.log(`(Bot) Embed aktualisiert mit neuem AVPS Link in Nachricht ${ticketData.embedMessageId} in Kanal ${channelName} (${channelId})`);
-      }
+    const ticketData = ticketDataStore.get(interaction.channel.id);
+    if (!ticketData) return;
 
-      await interaction.channel.send(`[${getTimestamp()}] ${user} hat die AVPS Akte bearbeitet: ${newLink}`);
-      await interaction.deferUpdate();
-      console.log(`(Bot) Modal-Submit (edit_avps_link) in Kanal ${channelName} (${channelId}) von ${userTag}`);
-    } catch (err) {
-      console.error(`(Bot) Fehler bei Modal-Submit (edit_avps_link) in Kanal ${channelName} (${channelId}) von ${userTag}:`, err);
-      await interaction.followUp({ content: 'Fehler beim Bearbeiten der AVPS Akte.', ephemeral: true });
-    }
+    ticketData.avpsLink = interaction.fields.getTextInputValue('link_input')?.trim();
+    ticketData.lastReset = false;
+    saveTicketData();
+
+    const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
+    const updatedEmbed = new EmbedBuilder()
+        .setTitle(embedMessage.embeds[0].title)
+        .setColor(embedMessage.embeds[0].color)
+        .addFields(createEmbedFields(ticketData, {}));
+    await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
+    await updateChannelName(interaction.channel, ticketData);
+    await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat die AVPS Akte bearbeitet: ${ticketData.avpsLink}`);
+    await interaction.deferUpdate();
+  }
+
+  if (interaction.isButton() && interaction.customId === 'delete_avps_link_button') {
+    const ticketData = ticketDataStore.get(interaction.channel.id);
+    if (!ticketData) return;
+
+    ticketData.avpsLink = null;
+    ticketData.lastReset = false;
+    saveTicketData();
+
+    const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
+    const updatedEmbed = new EmbedBuilder()
+        .setTitle(embedMessage.embeds[0].title)
+        .setColor(embedMessage.embeds[0].color)
+        .addFields(createEmbedFields(ticketData, {}));
+    await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
+    await updateChannelName(interaction.channel, ticketData);
+    await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat die AVPS Akte gelöscht.`);
+    await interaction.deferUpdate();
+  }
+
+  if (interaction.isButton() && interaction.customId === 'reset_ticket_button') {
+    const ticketData = ticketDataStore.get(interaction.channel.id);
+    if (!ticketData) return;
+
+    ticketData.acceptedBy = null;
+    ticketData.nickname = null;
+    ticketData.appointmentDate = null;
+    ticketData.appointmentTime = null;
+    ticketData.appointmentCompleted = false;
+    ticketData.avpsLink = null;
+    ticketData.lastReset = true;
+    ticketData.callAttempt = false;
+    saveTicketData();
+
+    const embedMessage = await interaction.channel.messages.fetch(ticketData.embedMessageId);
+    const updatedEmbed = new EmbedBuilder()
+        .setTitle(embedMessage.embeds[0].title)
+        .setColor(embedMessage.embeds[0].color)
+        .addFields(createEmbedFields(ticketData, {}));
+    await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
+    await updateChannelName(interaction.channel, ticketData);
+    await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat das Ticket zurückgesetzt.`);
+    await interaction.deferUpdate();
   }
 });
 
-// === Start ===
-console.log('USER_TOKEN:', USER_TOKEN ? 'Geladen' : 'Nicht definiert');
-console.log('BOT_TOKEN:', BOT_TOKEN ? 'Geladen' : 'Nicht definiert');
-console.log('BOT_USER_ID:', BOT_USER_ID ? 'Geladen' : 'Nicht definiert');
-console.log('ALLOWED_GUILD:', ALLOWED_GUILD ? 'Geladen' : 'Nicht definiert');
-console.log('ALLOWED_CATEGORY_ID:', ALLOWED_CATEGORY_ID ? 'Geladen' : 'Nicht definiert');
-console.log('TRIGGER_CHANNEL_ID:', TRIGGER_CHANNEL_ID ? 'Geladen' : 'Nicht definiert');
-console.log('TICKET_TOOL_BOT_ID:', TICKET_TOOL_BOT_ID ? 'Geladen' : 'Nicht definiert');
-console.log('TICKET_CREATOR_BOT_ID:', TICKET_CREATOR_BOT_ID ? 'Geladen' : 'Nicht definiert');
-
-userbot.login(USER_TOKEN).catch(err => console.error('(Userbot) Login Fehler:', err));
+// === START ===
 bot.login(BOT_TOKEN).catch(err => console.error('(Bot) Login Fehler:', err));
