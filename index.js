@@ -354,20 +354,6 @@ bot.on('interactionCreate', async (interaction) => {
   }
 });
 
-const updateEmbedMessage = async (channel, ticketData) => {
-  try {
-    const embedMessage = await channel.messages.fetch(ticketData.embedMessageId);
-    const updatedEmbed = new EmbedBuilder()
-        .setTitle(embedMessage.embeds[0].title)
-        .setColor(embedMessage.embeds[0].color)
-        .addFields(createEmbedFields(ticketData));
-    await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
-    console.log(`(Bot) Embed-Nachricht erfolgreich aktualisiert in Kanal ${channel.id}`);
-  } catch (err) {
-    console.error(`(Bot) Fehler beim Bearbeiten der Embed-Nachricht in Kanal ${channel.id}:`, err);
-  }
-};
-
 // Handler für set_preis_modal
 if (interaction.isModalSubmit() && interaction.customId === 'set_preis_modal') {
   await interaction.deferUpdate();
