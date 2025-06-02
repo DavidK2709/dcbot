@@ -9,25 +9,26 @@ const CONFIG = {
   ALLOWED_GUILD: process.env.ALLOWED_GUILD,
   TRIGGER_CHANNEL_ID: process.env.TRIGGER_CHANNEL_ID,
   LOG_CHANNEL_ID: process.env.LOG_CHANNEL_ID,
-  FORM_CHANNEL_ID: '1378976315822313502',
-  ADMIN_ROLES: ['1378976725903343657', '1378976807432359986'],
+  FORM_CHANNEL_ID: process.env.FORM_CHANNEL_ID,
+  ADMIN_ROLES: ['893588861744201783', '1378935141862477855'],
   DEPARTMENTS: {
     'Arbeitsmedizin': {
-      categoryId: '1378976400303718522',
-      memberRoleId: '1378976857470406706',
-      leaderRoleId: '1378976900642508933'
+      categoryId: '1378846063766671420',
+      memberRoleId: '1248410238365728801',
+      leaderRoleId: '1310249339867758682'
     },
     'Psychologie': {
-      categoryId: '1378976458877177996',
-      memberRoleId: '1378976959945769061',
-      leaderRoleId: '1378977015516102656'
+      categoryId: '1378846177969311775',
+      memberRoleId: '987267100026470431',
+      leaderRoleId: '1043561042627788853'
     },
     'Station': {
-      categoryId: '1378976512191238226',
-      memberRoleId: '1378977083904102600',
-      leaderRoleId: '1378977159615348766'
+      categoryId: '1378846356436684960',
+      memberRoleId: '893588861744201787',
+      leaderRoleId: '1283118800224653422'
     }
   },
+
   TICKET_REASONS: {
     ticket_arbeitsmedizinisches_pol: { internalKey: 'gutachten-polizei-patient', displayName: 'Arbeitsmedizinisches Gutachten Polizeibewerber' },
     ticket_arbeitsmedizinisches_jva: { internalKey: 'gutachten-jva-patient', displayName: 'Arbeitsmedizinisches Gutachten JVA/Wachschutz' },
@@ -165,13 +166,22 @@ const getButtonRows = (ticketData) => {
 
 const createEmbedFields = (ticketData) => {
   const reasonMapping = CONFIG.TICKET_REASONS[ticketData.grund];
+  const isAutomaticTicket = reasonMapping && Object.keys(CONFIG.TICKET_REASONS).includes(ticketData.grund);
   const fields = [
     { name: 'Abteilung', value: ticketData.abteilungPing || 'Nicht angegeben' },
-    { name: 'Grund', value: reasonMapping ? reasonMapping.displayName : ticketData.grund || 'Nicht angegeben' },
-    { name: 'Patient', value: ticketData.patient || 'Nicht angegeben' },
-    { name: 'Telefon', value: ticketData.telefon || 'Nicht angegeben' },
-    { name: 'Sonstiges', value: ticketData.sonstiges || 'Nicht angegeben' }
   ];
+
+  // Füge "Erstellt von:" nur für manuelle Tickets hinzu
+  if (!isAutomaticTicket && ticketData.createdBy) {
+    fields.push({ name: 'Erstellt von', value: ticketData.createdBy });
+  }
+
+  fields.push(
+      { name: 'Grund', value: reasonMapping ? reasonMapping.displayName : ticketData.grund || 'Nicht angegeben' },
+      { name: 'Patient', value: ticketData.patient || 'Nicht angegeben' },
+      { name: 'Telefon', value: ticketData.telefon || 'Nicht angegeben' },
+      { name: 'Sonstiges', value: ticketData.sonstiges || 'Nicht angegeben' }
+  );
 
   if (ticketData.acceptedBy) fields.push({ name: 'Übernommen von', value: ticketData.acceptedBy, inline: true });
   if (ticketData.appointmentDate && ticketData.appointmentTime) fields.push({ name: 'Termin', value: `${ticketData.appointmentDate} - ${ticketData.appointmentTime}` });
@@ -291,7 +301,28 @@ bot.on('ready', async () => {
 
       const embed = new EmbedBuilder()
           .setTitle('Behandlungsanfrage öffnen')
-          .setDescription('Bitte wähle den gewünschten Fachbereich aus:')
+          .setDescription(
+              '**Hilfe bei Fachbereichszuordnung:**\n\n' +
+              '**Station:**\n' +
+              '- DNA-Test\n' +
+              '- Altersbestimmung\n' +
+              '- Nachuntersuchungen\n' +
+              '- Medizinische Gutachten\n' +
+              '- Schmerzen\n\n' +
+              '**Arbeitsmedizin:**\n' +
+              '- Gutachten für Polizeibewerber, JVA-Wächter, Ammunationsmitarbeiter\n' +
+              '- Erste-Hilfe Kurs\n' +
+              '- Jobtechnische Gutachten\n\n' +
+              '**Psychologie:**\n' +
+              '- Waffenschein\n' +
+              '- Namensänderungen\n' +
+              '- MPU\n' +
+              '- Paartherapie\n' +
+              '- Psychologische Gutachten\n' +
+              '- Angststörungen\n' +
+              '- Traumabewältigung\n\n' +
+              '**Bitte wähle den gewünschten Fachbereich aus:**'
+          )
           .setColor(0x480007);
 
       const sentMessage = await formChannel.send({ embeds: [embed], components: [row] });
@@ -432,7 +463,12 @@ bot.on('interactionCreate', async (interaction) => {
                   new TextInputBuilder().setCustomId('patient_input').setLabel('Patient').setStyle(TextInputStyle.Short).setRequired(true)
               ),
               new ActionRowBuilder().addComponents(
-                  new TextInputBuilder().setCustomId('telefon_input').setLabel('Telefon').setStyle(TextInputStyle.Short).setRequired(true) // Telefon ist jetzt Pflichtfeld
+                  new TextInputBuilder()
+                      .setCustomId('telefon_input')
+                      .setLabel('Telefon')
+                      .setStyle(TextInputStyle.Short)
+                      .setRequired(true)
+                      .setValue("01726 ") // Telefonfeld vorausfüllen
               ),
               new ActionRowBuilder().addComponents(
                   new TextInputBuilder().setCustomId('sonstiges_input').setLabel('Sonstiges').setStyle(TextInputStyle.Paragraph).setRequired(false)
@@ -472,6 +508,7 @@ bot.on('interactionCreate', async (interaction) => {
 
       const data = {
         abteilung, grund, patient, telefon, sonstiges, abteilungPing: `<@&${departmentConfig.memberRoleId}>`,
+        createdBy: `<@${interaction.user.id}>`, // Ersteller speichern
         buttonMessageId: null, appointmentMessageId: null, completedMessageId: null,
         avpsMessageId: null, embedMessageId: null,
         appointmentDate: null, appointmentTime: null, acceptedBy: null, avpsLink: null,
@@ -497,7 +534,7 @@ bot.on('interactionCreate', async (interaction) => {
 
       const confirmationEmbed = new EmbedBuilder()
           .setTitle('Ticket erfolgreich erstellt')
-          .setColor(0x00FF00)
+          .setColor(0x480007) // Farbe angepasst
           .addFields([
             { name: 'Abteilung', value: data.abteilungPing, inline: false },
             { name: 'Grund', value: grund, inline: false },
