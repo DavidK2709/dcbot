@@ -791,7 +791,7 @@ bot.on('interactionCreate', async (interaction) => {
               new ActionRowBuilder().addComponents(
                   new TextInputBuilder()
                       .setCustomId('user_input')
-                      .setLabel('Username(s) oder Dienstnummer(n) (getrennt durch ;)')
+                      .setLabel('Benutzer/Dienstnummer (mit ; trennen)') // Gekürztes Label
                       .setStyle(TextInputStyle.Short)
                       .setRequired(true)
               )
