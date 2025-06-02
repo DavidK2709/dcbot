@@ -513,8 +513,14 @@ bot.on('interactionCreate', async (interaction) => {
         permissionOverwrites.push({ id: roleId, allow: ['ViewChannel', 'SendMessages'] });
       });
 
+      // Kanalname anpassen: 🕓-grund(max 25, Leerzeichen durch Bindestriche)-patient
+      const maxGrundLength = 25;
+      const truncatedGrund = grund.length > maxGrundLength ? grund.substring(0, maxGrundLength) : grund;
+      const formattedGrund = truncatedGrund.replace(/ /g, '-'); // Leerzeichen durch Bindestriche ersetzen
+      const channelName = `🕓-${formattedGrund}-${patient.replace(/ /g, '-')}`;
+
       const channel = await interaction.guild.channels.create({
-        name: `🕓 ${patient.replace(/ /g, '-')}`,
+        name: channelName,
         type: 0,
         parent: departmentConfig.categoryId,
         permissionOverwrites: permissionOverwrites
