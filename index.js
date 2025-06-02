@@ -504,9 +504,8 @@ bot.on('interactionCreate', async (interaction) => {
           { id: interaction.guild.id, deny: ['ViewChannel'] },
           { id: departmentConfig.memberRoleId, allow: ['ViewChannel', 'SendMessages'] }, // Bereits vorhandene Regel für memberRoleId
           // Zusätzliche Benutzergruppen hinzufügen
-          { id: '1248410238365728801', allow: ['ViewChannel', 'SendMessages'] }, // Arbeitsmedizin Member
-          { id: '987267100026470431', allow: ['ViewChannel', 'SendMessages'] }, // Psychologie Member
-          { id: '893588861744201787', allow: ['ViewChannel', 'SendMessages'] }   // Station Member
+          { id: '893588861744201786', allow: ['ViewChannel', 'SendMessages'] }, // Rettungsdienst  Member
+          { id: '1009513539414790195', allow: ['ViewChannel', 'SendMessages'] }, // Aushilfskräfte Member
         ],
       });
 
