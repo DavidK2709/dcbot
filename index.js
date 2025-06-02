@@ -210,17 +210,102 @@ const createEmbedFields = (ticketData) => {
   );
 
   if (ticketData.acceptedBy) fields.push({ name: 'Übernommen von', value: ticketData.acceptedBy, inline: true });
-  if (ticketData.preis) fields.push({ name: 'Preis', value: formatPrice(ticketData.preis), inline: true });
-  if (ticketData.appointmentDate && ticketData.appointmentTime) fields.push({ name: 'Termin', value: `${ticketData.appointmentDate} - ${ticketData.appointmentTime}` });
+  if (ticketData.preis) fields.push({ name: 'Preis', value: formatPrice(ticketData.preis), inline: false }); // Preis nicht inline
+  if (ticketData.appointmentDate && ticketData.appointmentTime) {
+    fields.push({ name: 'Termin', value: `${ticketData.appointmentDate} - ${ticketData.appointmentTime}` }); // Erster Termin bleibt "Termin"
+  }
   if (ticketData.followupAppointments && ticketData.followupAppointments.length > 0) {
     ticketData.followupAppointments.forEach((appt, index) => {
-      fields.push({ name: `Folgetermin${index > 0 ? ` ${index + 1}` : ''}`, value: `${appt.date} - ${appt.time}` });
+      fields.push({ name: `Folgetermin ${index + 1}`, value: `${appt.date} - ${appt.time}` }); // Folgetermine mit Nummerierung
     });
   }
   if (ticketData.avpsLink) fields.push({ name: 'AVPS-Akte', value: ticketData.avpsLink });
 
   return fields;
 };
+
+const updateEmbedMessage = async (channel, ticketData) => {
+  try {
+    const embedMessage = await channel.messages.fetch(ticketData.embedMessageId);
+    const updatedEmbed = new EmbedBuilder()
+        .setTitle(embedMessage.embeds[0].title)
+        .setColor(embedMessage.embeds[0].color)
+        .addFields(createEmbedFields(ticketData));
+    await embedMessage.edit({ embeds: [updatedEmbed], components: getButtonRows(ticketData) });
+    console.log(`(Bot) Embed-Nachricht erfolgreich aktualisiert in Kanal ${channel.id}`);
+  } catch (err) {
+    console.error(`(Bot) Fehler beim Bearbeiten der Embed-Nachricht in Kanal ${channel.id}:`, err);
+  }
+};
+
+// Handler für set_preis_modal
+if (interaction.isModalSubmit() && interaction.customId === 'set_preis_modal') {
+  await interaction.deferUpdate();
+  const ticketData = ticketDataStore.get(interaction.channel.id);
+  if (!ticketData) {
+    console.error(`(Bot) Ticket-Daten für Kanal ${interaction.channel.id} nicht gefunden bei set_preis_modal.`);
+    await interaction.followUp({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
+    return;
+  }
+
+  const preis = interaction.fields.getTextInputValue('preis_input')?.trim();
+  ticketData.preis = preis ? parseInt(preis) : undefined; // Leeres Feld -> undefined
+  ticketData.lastReset = false;
+  saveTicketData();
+
+  await updateEmbedMessage(interaction.channel, ticketData);
+  await updateChannelName(interaction.channel, ticketData);
+  await interaction.channel.send(
+      preis
+          ? `[${getTimestamp()}] ${interaction.user} hat den Preis auf ${formatPrice(preis)} festgelegt.`
+          : `[${getTimestamp()}] ${interaction.user} hat den Preis entfernt.`
+  );
+  return;
+}
+
+// Handler für edit_preis_modal
+if (interaction.isModalSubmit() && interaction.customId === 'edit_preis_modal') {
+  await interaction.deferUpdate();
+  const ticketData = ticketDataStore.get(interaction.channel.id);
+  if (!ticketData) {
+    console.error(`(Bot) Ticket-Daten für Kanal ${interaction.channel.id} nicht gefunden bei edit_preis_modal.`);
+    await interaction.followUp({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
+    return;
+  }
+
+  const preis = interaction.fields.getTextInputValue('preis_input')?.trim();
+  ticketData.preis = preis ? parseInt(preis) : undefined; // Leeres Feld -> undefined
+  ticketData.lastReset = false;
+  saveTicketData();
+
+  await updateEmbedMessage(interaction.channel, ticketData);
+  await updateChannelName(interaction.channel, ticketData);
+  await interaction.channel.send(
+      preis
+          ? `[${getTimestamp()}] ${interaction.user} hat den Preis auf ${formatPrice(preis)} bearbeitet.`
+          : `[${getTimestamp()}] ${interaction.user} hat den Preis entfernt.`
+  );
+  return;
+}
+
+// Handler für appointment_completed_button
+if (interaction.isButton() && interaction.customId === 'appointment_completed_button') {
+  await interaction.deferUpdate();
+  const ticketData = ticketDataStore.get(interaction.channel.id);
+  if (!ticketData) {
+    console.error(`(Bot) Ticket-Daten für Kanal ${interaction.channel.id} nicht gefunden bei appointment_completed_button.`);
+    await interaction.followUp({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
+    return;
+  }
+
+  ticketData.appointmentCompleted = true; // Markiere Termin als erledigt
+  saveTicketData();
+
+  await updateEmbedMessage(interaction.channel, ticketData);
+  await updateChannelName(interaction.channel, ticketData);
+  await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Termin erledigt.`);
+  return;
+}
 
 const updateEmbedMessage = async (channel, ticketData) => {
   try {
