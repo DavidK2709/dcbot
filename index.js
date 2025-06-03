@@ -220,26 +220,20 @@ const createEmbedFields = (ticketData) => {
         { name: 'Sonstiges', value: ticketData.sonstiges || 'Nicht angegeben' }
     );
 
-    // Display all appointments (original + follow-ups)
-    if (ticketData.originalAppointmentDate && ticketData.originalAppointmentTime) {
-        fields.push({ name: 'Termin', value: `${ticketData.originalAppointmentDate} - ${ticketData.originalAppointmentTime}` });
-    }
-
-    // Display follow-up appointments
+    // Display completed appointments (original + follow-ups)
     if (ticketData.followupAppointments && ticketData.followupAppointments.length > 0) {
         ticketData.followupAppointments.forEach((appt, index) => {
             fields.push({
-                name: `Termin ${index + 2}`,
+                name: index === 0 ? 'Termin' : `Termin ${index + 1}`,
                 value: `${appt.date} - ${appt.time}`
             });
         });
     }
 
-    // Display active appointment if exists
-    if (ticketData.appointmentDate && ticketData.appointmentTime && !ticketData.appointmentCompleted) {
-        const nextIndex = (ticketData.followupAppointments?.length || 0) + 1;
+    // Display active appointment if exists and no follow-up appointments yet
+    if (ticketData.appointmentDate && ticketData.appointmentTime && !ticketData.appointmentCompleted && (!ticketData.followupAppointments || ticketData.followupAppointments.length === 0)) {
         fields.push({
-            name: `Termin ${nextIndex}`,
+            name: 'Termin',
             value: `${ticketData.appointmentDate} - ${ticketData.appointmentTime}`
         });
     }
@@ -257,6 +251,8 @@ const createEmbedFields = (ticketData) => {
 
     return fields;
 };
+
+
 
 const updateEmbedMessage = async (channel, ticketData) => {
     try {
@@ -931,8 +927,6 @@ bot.on('interactionCreate', async (interaction) => {
                 time = time || currentTime;
             }
 
-            ticketData.originalAppointmentDate = ticketData.originalAppointmentDate || date;
-            ticketData.originalAppointmentTime = ticketData.originalAppointmentTime || time;
             ticketData.appointmentDate = date;
             ticketData.appointmentTime = time;
             ticketData.appointmentCompleted = false;
@@ -958,7 +952,7 @@ bot.on('interactionCreate', async (interaction) => {
                 ticketData.followupAppointments.push({ date: ticketData.appointmentDate, time: ticketData.appointmentTime });
                 ticketData.appointmentDate = null;
                 ticketData.appointmentTime = null;
-                ticketData.appointmentCompleted = ticketData.followupAppointments.length === 0 ? true : false;
+                ticketData.appointmentCompleted = true;
                 saveTicketData();
 
                 await updateEmbedMessage(interaction.channel, ticketData);
@@ -1205,11 +1199,29 @@ bot.on('interactionCreate', async (interaction) => {
 
             ticketData.appointmentDate = null;
             ticketData.appointmentTime = null;
+            ticketData.appointmentCompleted = false;
             saveTicketData();
 
             await updateEmbedMessage(interaction.channel, ticketData);
             await updateChannelName(interaction.channel, ticketData);
             await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Termin als nicht erschienen markiert.`);
+            return;
+        }
+
+
+        if (interaction.isButton() && interaction.customId === 'reschedule_appointment_button') {
+            const modal = new ModalBuilder()
+                .setCustomId('reschedule_appointment_modal')
+                .setTitle('Termin umlegen')
+                .addComponents(
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder().setCustomId('date_input').setLabel('Datum (DD.MM.YYYY)').setStyle(TextInputStyle.Short).setRequired(false)
+                    ),
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder().setCustomId('time_input').setLabel('Uhrzeit (HH:MM)').setStyle(TextInputStyle.Short).setRequired(false)
+                    )
+                );
+            await interaction.showModal(modal);
             return;
         }
 
@@ -1261,6 +1273,7 @@ bot.on('interactionCreate', async (interaction) => {
 
             ticketData.appointmentDate = date;
             ticketData.appointmentTime = time;
+            ticketData.appointmentCompleted = false;
             saveTicketData();
 
             await updateEmbedMessage(interaction.channel, ticketData);
@@ -1281,6 +1294,8 @@ bot.on('interactionCreate', async (interaction) => {
             ticketData.acceptedBy = null;
             ticketData.appointmentDate = null;
             ticketData.appointmentTime = null;
+            ticketData.originalAppointmentDate = null;
+            ticketData.originalAppointmentTime = null;
             ticketData.appointmentCompleted = false;
             ticketData.avpsLink = null;
             ticketData.callAttempt = false;
