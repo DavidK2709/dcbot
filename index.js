@@ -556,7 +556,7 @@ bot.on('interactionCreate', async (interaction) => {
                             .setLabel('Telefon')
                             .setStyle(TextInputStyle.Short)
                             .setRequired(true)
-                            .setValue("0176 ")
+                            .setValue("01726 ")
                     ),
                     new ActionRowBuilder().addComponents(
                         new TextInputBuilder().setCustomId('sonstiges_input').setLabel('Sonstiges').setStyle(TextInputStyle.Paragraph).setRequired(false)
