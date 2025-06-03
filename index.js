@@ -141,58 +141,61 @@ const getButtonRows = (ticketData) => {
             ? new ButtonBuilder().setCustomId('takeover_ticket_button').setLabel('Ticket neuvergeben').setStyle(ButtonStyle.Secondary)
             : new ButtonBuilder().setCustomId('takeover_ticket_button').setLabel('Ticket vergeben').setStyle(ButtonStyle.Danger);
 
+        // Erste Reihe: Basis-Buttons
         const row1Components = [
             new ButtonBuilder().setCustomId('call_attempt_button').setLabel('Versucht anzurufen').setStyle(ButtonStyle.Danger),
             takeoverButton,
             new ButtonBuilder().setCustomId('close_ticket_button').setLabel('Schließen').setStyle(ButtonStyle.Danger)
         ];
 
-        // "Termin festlegen" nur anzeigen, wenn kein Termin abgeschlossen ist und keine Folgetermine existieren
-        if (ticketData.acceptedBy && !ticketData.appointmentCompleted && (!ticketData.followupAppointments || ticketData.followupAppointments.length === 0)) {
+        // Termin festlegen nur hinzufügen, wenn Platz ist und Bedingung erfüllt
+        if (ticketData.acceptedBy && !ticketData.appointmentCompleted && (!ticketData.followupAppointments || ticketData.followupAppointments.length === 0) && row1Components.length < 5) {
             row1Components.splice(1, 0, new ButtonBuilder().setCustomId('schedule_appointment_button').setLabel('Termin festlegen').setStyle(ButtonStyle.Danger));
         }
 
         rows.push(new ActionRowBuilder().addComponents(row1Components));
 
-        // Termin-Buttons nur für aktiven Termin anzeigen
-        if (ticketData.appointmentDate && ticketData.appointmentTime && !ticketData.appointmentCompleted) {
+        // Zweite Reihe: Termin-Buttons für aktiven Termin
+        if (ticketData.appointmentDate && ticketData.appointmentTime && !ticketData.appointmentCompleted && rows.length < 5) {
             rows.push(new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('no_show_button').setLabel('Nicht zum Termin erschienen').setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId('no_show_button').setLabel('Nicht erschienen').setStyle(ButtonStyle.Danger),
                 new ButtonBuilder().setCustomId('reschedule_appointment_button').setLabel('Termin umlegen').setStyle(ButtonStyle.Secondary),
                 new ButtonBuilder().setCustomId('appointment_completed_button').setLabel('Termin erledigt').setStyle(ButtonStyle.Success)
             ));
         }
 
-        if (ticketData.appointmentCompleted || (ticketData.followupAppointments && ticketData.followupAppointments.length > 0)) {
-            rows.push(new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('schedule_followup_button').setLabel('Folgetermin festlegen').setStyle(ButtonStyle.Danger)
-            ));
+        // Dritte Reihe: Folgetermin und Preis
+        if ((ticketData.appointmentCompleted || (ticketData.followupAppointments && ticketData.followupAppointments.length > 0)) && rows.length < 5) {
+            const row3Components = [
+                new ButtonBuilder().setCustomId('schedule_followup_button').setLabel('Folgetermin festlegen').setStyle(ButtonStyle.Danger),
+                ticketData.preis
+                    ? new ButtonBuilder().setCustomId('edit_preis_button').setLabel('Preis bearbeiten').setStyle(ButtonStyle.Secondary)
+                    : new ButtonBuilder().setCustomId('set_preis_button').setLabel('Preis festlegen').setStyle(ButtonStyle.Danger)
+            ];
+            rows.push(new ActionRowBuilder().addComponents(row3Components));
         }
 
-        // AVPS Akte hinterlegen nur anzeigen, wenn mindestens ein Termin abgeschlossen ist
-        if (!ticketData.avpsLink && (ticketData.appointmentCompleted || (ticketData.followupAppointments && ticketData.followupAppointments.length > 0))) {
+        // Vierte Reihe: AVPS-Buttons
+        if (!ticketData.avpsLink && (ticketData.appointmentCompleted || (ticketData.followupAppointments && ticketData.followupAppointments.length > 0)) && rows.length < 5) {
             rows.push(new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('avps_link_button').setLabel('AVPS Akte hinterlegen').setStyle(ButtonStyle.Danger)
             ));
-        } else if (ticketData.avpsLink) {
+        } else if (ticketData.avpsLink && rows.length < 5) {
             rows.push(new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('edit_avps_link_button').setLabel('AVPS Akte bearbeiten').setStyle(ButtonStyle.Danger),
                 new ButtonBuilder().setCustomId('delete_avps_link_button').setLabel('Akte löschen').setStyle(ButtonStyle.Danger),
-                new ButtonBuilder().setCustomId('akte_ausgegeben_button').setLabel('Akte wurde herausgegeben').setStyle(ButtonStyle.Success)
+                new ButtonBuilder().setCustomId('akte_ausgegeben_button').setLabel('Akte herausgegeben').setStyle(ButtonStyle.Success)
             ));
         }
 
-        const preisButton = ticketData.preis
-            ? new ButtonBuilder().setCustomId('edit_preis_button').setLabel('Preis bearbeiten').setStyle(ButtonStyle.Secondary)
-            : new ButtonBuilder().setCustomId('set_preis_button').setLabel('Preis festlegen').setStyle(ButtonStyle.Danger);
+        // Fünfte Reihe: Zurücksetzen, nur wenn noch Platz
+        if (rows.length < 5) {
+            rows.push(new ActionRowBuilder().addComponents(
+                new ButtonBuilder().setCustomId('reset_ticket_button').setLabel('Ticket zurücksetzen').setStyle(ButtonStyle.Secondary).setDisabled(isResetDisabled)
+            ));
+        }
 
-        rows.push(new ActionRowBuilder().addComponents(preisButton));
-
-        rows.push(new ActionRowBuilder().addComponents(
-            new ButtonBuilder().setCustomId('reset_ticket_button').setLabel('Ticket zurücksetzen').setStyle(ButtonStyle.Secondary).setDisabled(isResetDisabled)
-        ));
-
-        return rows;
+        return rows.slice(0, 5); // Sicherstellen, dass maximal 5 Reihen gesendet werden
     } catch (err) {
         console.error('(Bot) Fehler beim Erstellen der Button Rows:', err);
         return [];
@@ -950,7 +953,7 @@ bot.on('interactionCreate', async (interaction) => {
 
                 await updateEmbedMessage(interaction.channel, ticketData);
                 await updateChannelName(interaction.channel, ticketData);
-                await interaction.followUp(`[${getTimestamp()}] ${interaction.user} hat den Termin erledigt.`);
+                await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Termin erledigt.`);
             }
             return;
         }
@@ -996,7 +999,7 @@ bot.on('interactionCreate', async (interaction) => {
 
             await updateEmbedMessage(interaction.channel, ticketData);
             await updateChannelName(interaction.channel, ticketData);
-            await interaction.followUp(`[${getTimestamp()}] ${interaction.user} hat einen Folgetermin festgelegt: ${date} - ${time}`);
+            await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat einen Folgetermin festgelegt: ${date} - ${time}`);
             return;
         }
 
