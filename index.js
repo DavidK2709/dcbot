@@ -704,7 +704,7 @@ bot.on('interactionCreate', async (interaction) => {
         if (interaction.isButton() && interaction.customId === 'delete_ticket_button') {
             const ticketData = ticketDataStore.get(interaction.channel.id);
             if (!ticketData) {
-                await interaction.channel.send('Ticket-Daten nicht gefunden.');
+                await interaction.reply({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
                 return;
             }
 
@@ -715,13 +715,21 @@ bot.on('interactionCreate', async (interaction) => {
             const canDelete = isAdmin || (isLeader && ticketData.isClosed);
 
             if (!canDelete) {
-                await interaction.channel.send('Du hast keine Berechtigung, dieses Ticket zu löschen. Nur Admins oder Abteilungsleiter (bei geschlossenen Tickets) dürfen löschen.');
+                await interaction.reply({ content: 'Du hast keine Berechtigung, dieses Ticket zu löschen. Nur Admins oder Abteilungsleiter (bei geschlossenen Tickets) dürfen löschen.', ephemeral: true });
                 return;
             }
 
-            const loggable = ticketData.acceptedBy && ticketData.grund && ticketData.avpsLink;
-            let logMessage = 'Ticket wird nicht geloggt, da erforderliche Werte (acceptedBy, grund, avpsLink) fehlen.';
-            if (loggable) {
+            let logMessage;
+            const isPsychOrArbeitsmedizin = ticketData.abteilung === 'Psychologie' || ticketData.abteilung === 'Arbeitsmedizin';
+            const loggable = isPsychOrArbeitsmedizin
+                ? ticketData.acceptedBy && ticketData.grund && ticketData.avpsLink && ticketData.preis
+                : ticketData.acceptedBy && ticketData.grund && ticketData.avpsLink;
+
+            if (!loggable) {
+                logMessage = isPsychOrArbeitsmedizin
+                    ? 'Ticket wird nicht geloggt, da erforderliche Werte (Ticket angenommen, Grund, AVPS Akte, Preis) fehlen.'
+                    : 'Ticket wird nicht geloggt, da erforderliche Werte (Ticket angenommen, Grund, AVPS Akte) fehlen.';
+            } else {
                 if (ticketData.abteilung === 'Psychologie') {
                     logMessage = `Ticket wird im Psychologie-Log (${CONFIG.PSYCHOLOGIE_LOG_CHANNEL_ID}) geloggt.`;
                 } else if (ticketData.abteilung === 'Arbeitsmedizin') {
@@ -740,7 +748,8 @@ bot.on('interactionCreate', async (interaction) => {
 
             await interaction.reply({
                 content: `Möchtest du das Ticket wirklich löschen? ${logMessage}`,
-                components: [confirmRow]
+                components: [confirmRow],
+                ephemeral: true
             });
             return;
         }
@@ -748,7 +757,7 @@ bot.on('interactionCreate', async (interaction) => {
         if (interaction.isButton() && interaction.customId === 'confirm_delete_button') {
             const ticketData = ticketDataStore.get(interaction.channel.id);
             if (!ticketData) {
-                await interaction.channel.send('Ticket-Daten nicht gefunden.');
+                await interaction.reply({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
                 return;
             }
 
@@ -764,11 +773,16 @@ bot.on('interactionCreate', async (interaction) => {
 
             const logChannel = bot.channels.cache.get(CONFIG.LOG_CHANNEL_ID);
             if (logChannel) {
-                await logChannel.send(`Ticket ${interaction.channel.id} wurde von ${interaction.user} gelöscht. Abteilung: ${ticketData.abteilung}, Patient: ${ticketData.patient}`);
+                await logChannel.send(`[${getTimestamp()}] Ticket ${interaction.channel.id} wurde von ${interaction.user} gelöscht. Abteilung: ${ticketData.abteilung}, Patient: ${ticketData.patient}`);
                 await logChannel.send({ embeds: [logEmbed] });
             }
 
-            if (ticketData.acceptedBy && ticketData.grund && ticketData.avpsLink) {
+            const isPsychOrArbeitsmedizin = ticketData.abteilung === 'Psychologie' || ticketData.abteilung === 'Arbeitsmedizin';
+            const loggable = isPsychOrArbeitsmedizin
+                ? ticketData.acceptedBy && ticketData.grund && ticketData.avpsLink && ticketData.preis
+                : ticketData.acceptedBy && ticketData.grund && ticketData.avpsLink;
+
+            if (loggable) {
                 const specificLogEmbed = new EmbedBuilder()
                     .setTitle(`Neues Gutachten für ${ticketData.patient}`)
                     .setColor(0x480007)
@@ -814,7 +828,6 @@ bot.on('interactionCreate', async (interaction) => {
             ticketDataStore.delete(interaction.channel.id);
             saveTicketData();
             await interaction.channel.delete();
-            await interaction.channel.send('Ticket erfolgreich gelöscht.');
             return;
         }
 
@@ -853,7 +866,7 @@ bot.on('interactionCreate', async (interaction) => {
                     console.log(`(Bot) Benutzer gefunden: ${data.mention}`);
                 } catch (err) {
                     console.error(`(Bot) Fehler beim Suchen des Benutzers ${userInput} in Kanal ${interaction.channel.id}:`, err);
-                    await interaction.channel.send(`Benutzer ${userInput} konnte nicht gefunden werden.`);
+                    await interaction.reply({ content: `Benutzer ${userInput} konnte nicht gefunden werden.`, ephemeral: true });
                     return;
                 }
             }
@@ -861,7 +874,7 @@ bot.on('interactionCreate', async (interaction) => {
             const ticketData = ticketDataStore.get(interaction.channel.id);
             if (!ticketData) {
                 console.error(`(Bot) Ticket-Daten für Kanal ${interaction.channel.id} nicht gefunden bei takeover_user_modal.`);
-                await interaction.channel.send('Ticket-Daten nicht gefunden.');
+                await interaction.reply({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
                 return;
             }
 
@@ -872,7 +885,7 @@ bot.on('interactionCreate', async (interaction) => {
 
             await updateEmbedMessage(interaction.channel, ticketData);
             await updateChannelName(interaction.channel, ticketData);
-            await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat das Ticket an ${ticketData.acceptedBy} neu vergeben.`);
+            await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat das Ticket an ${userData.map(u => u.mention).join(', ')} neu vergeben.`);
             return;
         }
 
@@ -1180,9 +1193,12 @@ bot.on('interactionCreate', async (interaction) => {
             const ticketData = ticketDataStore.get(interaction.channel.id);
             if (!ticketData) {
                 console.error(`(Bot) Ticket-Daten für Kanal ${interaction.channel.id} nicht gefunden bei akte_ausgegeben_button.`);
-                await interaction.channel.send('Ticket-Daten nicht gefunden.');
+                await interaction.reply({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
                 return;
             }
+
+            ticketData.akteAusgegeben = true; // Markiere Akte als herausgegeben
+            saveTicketData();
 
             await updateEmbedMessage(interaction.channel, ticketData);
             await updateChannelName(interaction.channel, ticketData);
