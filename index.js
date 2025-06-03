@@ -731,13 +731,13 @@ bot.on('interactionCreate', async (interaction) => {
                     : 'Ticket wird nicht geloggt, da erforderliche Werte (Ticket angenommen, Grund, AVPS Akte) fehlen.';
             } else {
                 if (ticketData.abteilung === 'Psychologie') {
-                    logMessage = `Ticket wird im Psychologie-Log (${CONFIG.PSYCHOLOGIE_LOG_CHANNEL_ID}) geloggt.`;
+                    logMessage = `Ticket wird im Psychologie-Log  <@&(${CONFIG.PSYCHOLOGIE_LOG_CHANNEL_ID})> geloggt.`;
                 } else if (ticketData.abteilung === 'Arbeitsmedizin') {
-                    logMessage = `Ticket wird im Arbeitsmedizin-Log (${CONFIG.ARBEITSMEDIZIN_LOG_CHANNEL_ID}) geloggt.`;
+                    logMessage = `Ticket wird im Arbeitsmedizin-Log <@&(${CONFIG.ARBEITSMEDIZIN_LOG_CHANNEL_ID})> geloggt.`;
                 } else if (ticketData.abteilung === 'Station') {
                     logMessage = ticketData.preis && parseInt(ticketData.preis) > 0
-                        ? `Ticket wird im Station-Log (${CONFIG.STATION_LOG_CHANNEL_ID}) geloggt.`
-                        : `Ticket wird in Stationäre Behandlungen (${CONFIG.STATION_TREATMENT_CHANNEL_ID}) geloggt.`;
+                        ? `Ticket wird im Station-Log  <@&(${CONFIG.STATION_LOG_CHANNEL_ID})> geloggt.`
+                        : `Ticket wird in Stationäre Behandlungen  <@&(${CONFIG.STATION_TREATMENT_CHANNEL_ID})> geloggt.`;
                 }
             }
 
