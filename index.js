@@ -123,6 +123,8 @@ const updateChannelName = async (channel, ticketData) => {
     }
 };
 
+const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
+
 const getButtonRows = (ticketData) => {
     try {
         const rows = [];
@@ -141,21 +143,31 @@ const getButtonRows = (ticketData) => {
             ? new ButtonBuilder().setCustomId('takeover_ticket_button').setLabel('Ticket neuvergeben').setStyle(ButtonStyle.Secondary)
             : new ButtonBuilder().setCustomId('takeover_ticket_button').setLabel('Ticket vergeben').setStyle(ButtonStyle.Danger);
 
-        // Erste Reihe: Basis-Buttons
+        // First row: Main actions
         const row1Components = [
             new ButtonBuilder().setCustomId('call_attempt_button').setLabel('Versucht anzurufen').setStyle(ButtonStyle.Danger),
-            takeoverButton,
-            new ButtonBuilder().setCustomId('close_ticket_button').setLabel('Schließen').setStyle(ButtonStyle.Danger)
+            takeoverButton
         ];
 
-        // Termin festlegen nur hinzufügen, wenn Platz ist und Bedingung erfüllt
-        if (ticketData.acceptedBy && !ticketData.appointmentCompleted && (!ticketData.followupAppointments || ticketData.followupAppointments.length === 0) && row1Components.length < 5) {
-            row1Components.splice(1, 0, new ButtonBuilder().setCustomId('schedule_appointment_button').setLabel('Termin festlegen').setStyle(ButtonStyle.Danger));
+        // Only show schedule button if no active appointment exists
+        if (ticketData.acceptedBy && !ticketData.appointmentDate && !ticketData.appointmentTime) {
+            row1Components.push(
+                new ButtonBuilder().setCustomId('schedule_appointment_button').setLabel('Termin festlegen').setStyle(ButtonStyle.Danger)
+            );
+        }
+
+        // Add price button to first row if possible
+        if (row1Components.length < 5) {
+            row1Components.push(
+                ticketData.preis
+                    ? new ButtonBuilder().setCustomId('edit_preis_button').setLabel('Preis bearbeiten').setStyle(ButtonStyle.Secondary)
+                    : new ButtonBuilder().setCustomId('set_preis_button').setLabel('Preis festlegen').setStyle(ButtonStyle.Danger)
+            );
         }
 
         rows.push(new ActionRowBuilder().addComponents(row1Components));
 
-        // Zweite Reihe: Termin-Buttons für aktiven Termin
+        // Second row: Appointment actions (only for active appointment)
         if (ticketData.appointmentDate && ticketData.appointmentTime && !ticketData.appointmentCompleted && rows.length < 5) {
             rows.push(new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('no_show_button').setLabel('Nicht erschienen').setStyle(ButtonStyle.Danger),
@@ -164,19 +176,8 @@ const getButtonRows = (ticketData) => {
             ));
         }
 
-        // Dritte Reihe: Folgetermin und Preis
-        if ((ticketData.appointmentCompleted || (ticketData.followupAppointments && ticketData.followupAppointments.length > 0)) && rows.length < 5) {
-            const row3Components = [
-                new ButtonBuilder().setCustomId('schedule_followup_button').setLabel('Folgetermin festlegen').setStyle(ButtonStyle.Danger),
-                ticketData.preis
-                    ? new ButtonBuilder().setCustomId('edit_preis_button').setLabel('Preis bearbeiten').setStyle(ButtonStyle.Secondary)
-                    : new ButtonBuilder().setCustomId('set_preis_button').setLabel('Preis festlegen').setStyle(ButtonStyle.Danger)
-            ];
-            rows.push(new ActionRowBuilder().addComponents(row3Components));
-        }
-
-        // Vierte Reihe: AVPS-Buttons
-        if (!ticketData.avpsLink && (ticketData.appointmentCompleted || (ticketData.followupAppointments && ticketData.followupAppointments.length > 0)) && rows.length < 5) {
+        // Third row: AVPS buttons
+        if (!ticketData.avpsLink && ticketData.appointmentCompleted && rows.length < 5) {
             rows.push(new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('avps_link_button').setLabel('AVPS Akte hinterlegen').setStyle(ButtonStyle.Danger)
             ));
@@ -188,14 +189,15 @@ const getButtonRows = (ticketData) => {
             ));
         }
 
-        // Fünfte Reihe: Zurücksetzen, nur wenn noch Platz
+        // Fourth row: Close and reset
         if (rows.length < 5) {
             rows.push(new ActionRowBuilder().addComponents(
-                new ButtonBuilder().setCustomId('reset_ticket_button').setLabel('Ticket zurücksetzen').setStyle(ButtonStyle.Secondary).setDisabled(isResetDisabled)
+                new ButtonBuilder().setCustomId('close_ticket_button').setLabel('Schließen').setStyle(ButtonStyle.Danger),
+                new ButtonBuilder().setCustomId('reset_ticket_button').setLabel('Zurücksetzen').setStyle(ButtonStyle.Secondary).setDisabled(isResetDisabled)
             ));
         }
 
-        return rows.slice(0, 5); // Sicherstellen, dass maximal 5 Reihen gesendet werden
+        return rows.slice(0, 5);
     } catch (err) {
         console.error('(Bot) Fehler beim Erstellen der Button Rows:', err);
         return [];
@@ -220,16 +222,26 @@ const createEmbedFields = (ticketData) => {
         { name: 'Sonstiges', value: ticketData.sonstiges || 'Nicht angegeben' }
     );
 
-    // Ursprünglicher Termin als "Termin" anzeigen
+    // Display all appointments (original + follow-ups)
     if (ticketData.originalAppointmentDate && ticketData.originalAppointmentTime) {
         fields.push({ name: 'Termin', value: `${ticketData.originalAppointmentDate} - ${ticketData.originalAppointmentTime}` });
     }
 
-    // Nur aktiven Folgetermin anzeigen, mit korrektem Index
+    // Display follow-up appointments
+    if (ticketData.followupAppointments && ticketData.followupAppointments.length > 0) {
+        ticketData.followupAppointments.forEach((appt, index) => {
+            fields.push({
+                name: `Termin ${index + 2}`,
+                value: `${appt.date} - ${appt.time}`
+            });
+        });
+    }
+
+    // Display active appointment if exists
     if (ticketData.appointmentDate && ticketData.appointmentTime && !ticketData.appointmentCompleted) {
-        const nextIndex = ticketData.followupAppointments ? ticketData.followupAppointments.length + 1 : 1;
+        const nextIndex = (ticketData.followupAppointments?.length || 0) + 1;
         fields.push({
-            name: `Folgetermin ${nextIndex}`,
+            name: `Termin ${nextIndex}`,
             value: `${ticketData.appointmentDate} - ${ticketData.appointmentTime}`
         });
     }
