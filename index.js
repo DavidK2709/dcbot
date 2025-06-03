@@ -101,9 +101,9 @@ const formatPrice = (price) => {
     if (price === null || price === undefined) return 'Nicht angegeben';
     const num = parseInt(price);
     if (isNaN(num)) return 'Ungültig';
-    return `€${num}`;
+    // Deutsche Formatierung mit Tausendertrennzeichen
+    return `€${num.toLocaleString('de-DE')}`;
 };
-
 const getChannelName = (ticketData) => {
     const reasonMapping = CONFIG.TICKET_REASONS[ticketData.grund];
     const isAutomaticTicket = reasonMapping && Object.keys(CONFIG.TICKET_REASONS).includes(ticketData.grund);
