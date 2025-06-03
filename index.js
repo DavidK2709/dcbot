@@ -154,6 +154,7 @@ const getButtonRows = (ticketData) => {
 
         rows.push(new ActionRowBuilder().addComponents(row1Components));
 
+        // Termin-Buttons nur für aktiven Termin anzeigen
         if (ticketData.appointmentDate && ticketData.appointmentTime && !ticketData.appointmentCompleted) {
             rows.push(new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('no_show_button').setLabel('Nicht zum Termin erschienen').setStyle(ButtonStyle.Danger),
@@ -162,7 +163,7 @@ const getButtonRows = (ticketData) => {
             ));
         }
 
-        if (ticketData.appointmentCompleted) {
+        if (ticketData.appointmentCompleted || (ticketData.followupAppointments && ticketData.followupAppointments.length > 0)) {
             rows.push(new ActionRowBuilder().addComponents(
                 new ButtonBuilder().setCustomId('schedule_followup_button').setLabel('Folgetermin festlegen').setStyle(ButtonStyle.Danger)
             ));
@@ -221,17 +222,7 @@ const createEmbedFields = (ticketData) => {
         fields.push({ name: 'Termin', value: `${ticketData.originalAppointmentDate} - ${ticketData.originalAppointmentTime}` });
     }
 
-    // Abgeschlossene Folgetermine anzeigen
-    if (ticketData.followupAppointments && ticketData.followupAppointments.length > 0) {
-        ticketData.followupAppointments.forEach((appointment, index) => {
-            fields.push({
-                name: `Folgetermin ${index + 1}`,
-                value: `${appointment.date} - ${appointment.time}`
-            });
-        });
-    }
-
-    // Aktueller Termin als nächster Folgetermin anzeigen
+    // Nur aktiven Folgetermin anzeigen, mit korrektem Index
     if (ticketData.appointmentDate && ticketData.appointmentTime && !ticketData.appointmentCompleted) {
         const nextIndex = ticketData.followupAppointments ? ticketData.followupAppointments.length + 1 : 1;
         fields.push({
@@ -554,13 +545,10 @@ bot.on('interactionCreate', async (interaction) => {
                             .setLabel('Telefon')
                             .setStyle(TextInputStyle.Short)
                             .setRequired(true)
-                            .setValue("01726 ")
+                            .setValue("0176 ")
                     ),
                     new ActionRowBuilder().addComponents(
                         new TextInputBuilder().setCustomId('sonstiges_input').setLabel('Sonstiges').setStyle(TextInputStyle.Paragraph).setRequired(false)
-                    ),
-                    new ActionRowBuilder().addComponents(
-                        new TextInputBuilder().setCustomId('termin_input').setLabel('Termin (DD.MM.YYYY - HH:MM)').setStyle(TextInputStyle.Short).setRequired(false)
                     )
                 );
             await interaction.showModal(modal);
@@ -568,22 +556,21 @@ bot.on('interactionCreate', async (interaction) => {
         }
 
         if (interaction.isModalSubmit() && interaction.customId.startsWith('create_ticket_modal_')) {
-            await interaction.deferUpdate();
+            await interaction.deferReply({ ephemeral: true });
             const abteilung = interaction.customId.split('_')[3].charAt(0).toUpperCase() + interaction.customId.split('_')[3].slice(1);
             const grund = interaction.fields.getTextInputValue('grund_input')?.trim();
             const patient = interaction.fields.getTextInputValue('patient_input')?.trim();
             const telefon = interaction.fields.getTextInputValue('telefon_input')?.trim();
             const sonstiges = interaction.fields.getTextInputValue('sonstiges_input')?.trim();
-            const termin = interaction.fields.getTextInputValue('termin_input')?.trim();
 
             if (!grund || !patient || !telefon) {
-                await interaction.channel.send('Grund, Patient und Telefon sind erforderlich.');
+                await interaction.editReply({ content: 'Grund, Patient und Telefon sind erforderlich.', ephemeral: true });
                 return;
             }
 
             const departmentConfig = CONFIG.DEPARTMENTS[abteilung];
             if (!departmentConfig) {
-                await interaction.channel.send(`Ungültige Abteilung: ${abteilung}`);
+                await interaction.editReply({ content: `Ungültige Abteilung: ${abteilung}`, ephemeral: true });
                 return;
             }
 
@@ -628,14 +615,6 @@ bot.on('interactionCreate', async (interaction) => {
                 data.preis = reasonMapping.preis;
             }
 
-            if (termin) {
-                const [date, time] = termin.split(' - ');
-                if (date && time) {
-                    data.originalAppointmentDate = date;
-                    data.originalAppointmentTime = time;
-                }
-            }
-
             ticketDataStore.set(channel.id, data);
             saveTicketData();
 
@@ -653,7 +632,7 @@ bot.on('interactionCreate', async (interaction) => {
             data.embedMessageId = embedMessage.id;
             saveTicketData();
 
-            await interaction.channel.send(`[${getTimestamp()}] Ticket erfolgreich erstellt für ${patient} (${abteilung}).`);
+            await interaction.editReply({ content: `[${getTimestamp()}] Ticket erfolgreich erstellt für ${patient} (${abteilung}).`, ephemeral: true });
             return;
         }
 
@@ -957,7 +936,7 @@ bot.on('interactionCreate', async (interaction) => {
             const ticketData = ticketDataStore.get(interaction.channel.id);
             if (!ticketData) {
                 console.error(`(Bot) Ticket-Daten für Kanal ${interaction.channel.id} nicht gefunden bei appointment_completed_button.`);
-                await interaction.channel.send('Ticket-Daten nicht gefunden.');
+                await interaction.followUp({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
                 return;
             }
 
@@ -966,12 +945,12 @@ bot.on('interactionCreate', async (interaction) => {
                 ticketData.followupAppointments.push({ date: ticketData.appointmentDate, time: ticketData.appointmentTime });
                 ticketData.appointmentDate = null;
                 ticketData.appointmentTime = null;
-                ticketData.appointmentCompleted = true;
+                ticketData.appointmentCompleted = ticketData.followupAppointments.length === 0 ? true : false;
                 saveTicketData();
 
                 await updateEmbedMessage(interaction.channel, ticketData);
                 await updateChannelName(interaction.channel, ticketData);
-                await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Termin erledigt.`);
+                await interaction.followUp(`[${getTimestamp()}] ${interaction.user} hat den Termin erledigt.`);
             }
             return;
         }
@@ -997,7 +976,7 @@ bot.on('interactionCreate', async (interaction) => {
             const ticketData = ticketDataStore.get(interaction.channel.id);
             if (!ticketData) {
                 console.error(`(Bot) Ticket-Daten für Kanal ${interaction.channel.id} nicht gefunden bei schedule_followup_modal.`);
-                await interaction.channel.send('Ticket-Daten nicht gefunden.');
+                await interaction.followUp({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
                 return;
             }
 
@@ -1017,7 +996,7 @@ bot.on('interactionCreate', async (interaction) => {
 
             await updateEmbedMessage(interaction.channel, ticketData);
             await updateChannelName(interaction.channel, ticketData);
-            await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat einen Folgetermin festgelegt: ${date} - ${time}`);
+            await interaction.followUp(`[${getTimestamp()}] ${interaction.user} hat einen Folgetermin festgelegt: ${date} - ${time}`);
             return;
         }
 
@@ -1221,19 +1200,31 @@ bot.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        if (interaction.isButton() && interaction.customId === 'reschedule_appointment_button') {
-            const modal = new ModalBuilder()
-                .setCustomId('reschedule_appointment')
-                .setTitle('Termin umlegen')
-                .addComponents(
-                    new ActionRowBuilder().addComponents(
-                        new TextInputBuilder().setCustomId('date_input').setLabel('Neues Datum (DD.MM.YYYY)').setStyle(TextInputStyle.Short).setRequired(false)
-                    ),
-                    new ActionRowBuilder().addComponents(
-                        new TextInputBuilder().setCustomId('time_input').setLabel('Neue Uhrzeit (HH:MM)').setStyle(TextInputStyle.Short).setRequired(false)
-                    )
-                );
-            await interaction.showModal(modal);
+        if (interaction.isModalSubmit() && interaction.customId === 'reschedule_appointment') {
+            await interaction.deferUpdate();
+            const ticketData = ticketDataStore.get(interaction.channel.id);
+            if (!ticketData) {
+                console.error(`(Bot) Ticket-Daten für Kanal ${interaction.channel.id} nicht gefunden bei reschedule_appointment.`);
+                await interaction.followUp({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
+                return;
+            }
+
+            let date = interaction.fields.getTextInputValue('date_input')?.trim();
+            let time = interaction.fields.getTextInputValue('time_input')?.trim();
+
+            if (!date || !time) {
+                const { date: currentDate, time: currentTime } = getCurrentDateTime();
+                date = date || currentDate;
+                time = time || currentTime;
+            }
+
+            ticketData.appointmentDate = date;
+            ticketData.appointmentTime = time;
+            saveTicketData();
+
+            await updateEmbedMessage(interaction.channel, ticketData);
+            await updateChannelName(interaction.channel, ticketData);
+            await interaction.followUp(`[${getTimestamp()}] ${interaction.user} hat den Termin umgelegt: ${date} - ${time}`);
             return;
         }
 
