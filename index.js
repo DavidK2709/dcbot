@@ -98,8 +98,10 @@ const findUserInGuild = async (guild, input) => {
 };
 
 const formatPrice = (price) => {
-    if (!price) return null;
-    return parseInt(price).toLocaleString('de-DE') + ' €';
+    if (price === null || price === undefined) return 'Nicht angegeben';
+    const num = parseInt(price);
+    if (isNaN(num)) return 'Ungültig';
+    return `€${num}`;
 };
 
 const getChannelName = (ticketData) => {
@@ -1067,7 +1069,7 @@ bot.on('interactionCreate', async (interaction) => {
                     new ActionRowBuilder().addComponents(
                         new TextInputBuilder()
                             .setCustomId('preis_input')
-                            .setLabel('Preis (in €)')
+                            .setLabel('Preis (in €, nur Ganzzahlen)')
                             .setStyle(TextInputStyle.Short)
                             .setRequired(false)
                             .setPlaceholder('Leer lassen, um Preis zu löschen')
@@ -1089,11 +1091,13 @@ bot.on('interactionCreate', async (interaction) => {
             const preis = interaction.fields.getTextInputValue('preis_input')?.trim();
             if (!preis) {
                 ticketData.preis = null; // Leerer Preis löscht den Preis
-            } else if (isNaN(parseFloat(preis)) || parseFloat(preis) < 0) {
-                await interaction.followUp({ content: 'Bitte gib einen gültigen Preis ein (z. B. 100 oder 99.99).', ephemeral: true });
-                return;
             } else {
-                ticketData.preis = parseFloat(preis).toFixed(2); // Speichere Preis als Zahl mit 2 Dezimalstellen
+                const num = parseFloat(preis);
+                if (isNaN(num) || !Number.isInteger(num) || num < 0) {
+                    await interaction.followUp({ content: 'Bitte gib eine gültige Ganzzahl ein (z. B. 0, 100).', ephemeral: true });
+                    return;
+                }
+                ticketData.preis = parseInt(preis); // Speichere als Ganzzahl
             }
 
             saveTicketData();
@@ -1119,7 +1123,7 @@ bot.on('interactionCreate', async (interaction) => {
                     new ActionRowBuilder().addComponents(
                         new TextInputBuilder()
                             .setCustomId('preis_input')
-                            .setLabel('Neuer Preis (in €)')
+                            .setLabel('Neuer Preis (in €, nur Ganzzahlen)')
                             .setStyle(TextInputStyle.Short)
                             .setRequired(false)
                             .setValue(ticketData.preis ? ticketData.preis.toString() : '')
@@ -1142,11 +1146,13 @@ bot.on('interactionCreate', async (interaction) => {
             const preis = interaction.fields.getTextInputValue('preis_input')?.trim();
             if (!preis) {
                 ticketData.preis = null; // Leerer Preis löscht den Preis
-            } else if (isNaN(parseFloat(preis)) || parseFloat(preis) < 0) {
-                await interaction.followUp({ content: 'Bitte gib einen gültigen Preis ein (z. B. 100 oder 99.99).', ephemeral: true });
-                return;
             } else {
-                ticketData.preis = parseFloat(preis).toFixed(2); // Speichere Preis als Zahl mit 2 Dezimalstellen
+                const num = parseFloat(preis);
+                if (isNaN(num) || !Number.isInteger(num) || num < 0) {
+                    await interaction.followUp({ content: 'Bitte gib eine gültige Ganzzahl ein (z. B. 0, 100).', ephemeral: true });
+                    return;
+                }
+                ticketData.preis = parseInt(preis); // Speichere als Ganzzahl
             }
 
             saveTicketData();
