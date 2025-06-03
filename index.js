@@ -123,8 +123,6 @@ const updateChannelName = async (channel, ticketData) => {
     }
 };
 
-const { ActionRowBuilder, ButtonBuilder, ButtonStyle } = require("discord.js");
-
 const getButtonRows = (ticketData) => {
     try {
         const rows = [];
