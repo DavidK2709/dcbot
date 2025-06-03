@@ -220,21 +220,25 @@ const createEmbedFields = (ticketData) => {
         { name: 'Sonstiges', value: ticketData.sonstiges || 'Nicht angegeben' }
     );
 
-    // Nur aktiven Termin anzeigen, wenn er existiert und nicht abgeschlossen ist
-    if (ticketData.appointmentDate && ticketData.appointmentTime && !ticketData.appointmentCompleted) {
-        fields.push({
-            name: 'Termin',
-            value: `${ticketData.appointmentDate} - ${ticketData.appointmentTime}`
+    // Füge abgeschlossene Termine in der Reihenfolge hinzu, wie sie gespeichert sind
+    let appointmentIndex = 0;
+    if (ticketData.followupAppointments && ticketData.followupAppointments.length > 0) {
+        ticketData.followupAppointments.forEach((appt, index) => {
+            const fieldName = index === 0 ? 'Termin' : `Termin ${index + 1}`;
+            fields.push({
+                name: fieldName,
+                value: `${appt.date} - ${appt.time}`
+            });
+            appointmentIndex = index + 1;
         });
     }
 
-    // Abgeschlossene Termine (followupAppointments) anzeigen
-    if (ticketData.followupAppointments && ticketData.followupAppointments.length > 0) {
-        ticketData.followupAppointments.forEach((appt, index) => {
-            fields.push({
-                name: `Termin ${index + 1}`,
-                value: `${appt.date} - ${appt.time}`
-            });
+    // Füge aktiven Termin als letzten Eintrag hinzu, falls vorhanden
+    if (ticketData.appointmentDate && ticketData.appointmentTime && !ticketData.appointmentCompleted) {
+        const fieldName = appointmentIndex === 0 ? 'Termin' : `Termin ${appointmentIndex + 1}`;
+        fields.push({
+            name: fieldName,
+            value: `${ticketData.appointmentDate} - ${ticketData.appointmentTime}`
         });
     }
 
@@ -1202,10 +1206,76 @@ bot.on('interactionCreate', async (interaction) => {
 
             await updateEmbedMessage(interaction.channel, ticketData);
             await updateChannelName(interaction.channel, ticketData);
-            await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Termin als nicht erschienen markiert.`);
+            await interaction.reply(`[${getTimestamp()}] ${interaction.user} hat den Termin als nicht erschienen markiert.`);
             return;
         }
 
+        if (interaction.isButton() && interaction.customId === 'reschedule_appointment_action') {
+            const ticketData = ticketDataStore.get(interaction.channel.id);
+            if (!ticketData) {
+                console.error(`(Bot) Ticket-Daten für Kanal ${interaction.channel.id} nicht gefunden bei reschedule_appointment_action`);
+                await interaction.reply('Ticket-Daten nicht gefunden.');
+                return;
+            }
+
+            if (!ticketData.appointmentDate || !ticketData.appointmentTime) {
+                await interaction.reply('Kein aktiver Termin vorhanden, der umgelegt werden kann.');
+                return;
+            }
+
+            const modal = new ModalBuilder()
+                .setCustomId('reschedule_appointment')
+                .setTitle('Termin umlegen')
+                .addComponents(
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('date_input')
+                            .setLabel('Datum (DD.MM.YYYY)')
+                            .setStyle(TextInputStyle.Text)
+                            .setValue(ticketData.appointmentDate || '')
+                            .setRequired(false)
+                    ),
+                    new ActionRowBuilder().addComponents(
+                        new TextInputBuilder()
+                            .setCustomId('time_input')
+                            .setLabel('Uhrzeit (HH:MM)')
+                            .setStyle(TextInputStyle.Text)
+                            .setValue(ticketData.appointmentTime || '')
+                            .setRequired(false)
+                    )
+                );
+            await interaction.showModal(modal);
+            return;
+        }
+
+        if (interaction.isModalSubmit() && interaction.customId === 'reschedule_modal_appointment') {
+            await interaction.deferUpdate();
+            const ticketData = ticketDataStore.get(interaction.channel.id);
+            if (!ticketData) {
+                console.error(`(Bot) Ticket-Daten für Kanal ${interaction.channel.id} nicht gefunden bei reschedule_modal_appointment.`);
+                await interaction.reply('Ticket-Daten nicht gefunden.');
+                return;
+            }
+
+            let date = interaction.fields.getTextInputValue('date_input')?.trim()?.value;
+            let time = interaction.fields?.getTextInputValue('time_input')?.trim();
+
+            if (!date || !time) {
+                const { date: currentDate, time: currentTime } = getCurrentDateTime();
+                date = date || currentDate;
+                time = time || currentTime;
+            }
+
+            ticketData.appointmentDate = date;
+            ticketData.appointmentTime = time;
+            ticketData.appointmentCompleted = false;
+            saveTicketData();
+
+            await updateEmbedMessage(interaction.channel, ticketData);
+            await updateChannelName(interaction.channel, ticketData);
+            await interaction.reply(`[${getTimestamp()}] ${interaction.user} hat den Termin umgelegt: ${date} - ${time}`);
+            return;
+        }
 
         if (interaction.isButton() && interaction.customId === 'reschedule_appointment_button') {
             const modal = new ModalBuilder()
