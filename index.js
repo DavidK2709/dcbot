@@ -784,10 +784,10 @@ bot.on('interactionCreate', async (interaction) => {
 
             if (loggable) {
                 const specificLogEmbed = new EmbedBuilder()
-                    .setTitle(`Neues Gutachten für ${ticketData.patient}`)
+                    .setTitle(`Behandlung von ${ticketData.patient}`)
                     .setColor(0x480007)
                     .addFields([
-                        { name: 'Name des Gutachters', value: ticketData.acceptedBy },
+                        { name: 'Name:', value: ticketData.acceptedBy },
                         { name: 'Grund', value: reasonMapping ? reasonMapping.displayName : ticketData.grund },
                         { name: 'Preis', value: formatPrice(ticketData.preis) || 'Nicht angegeben' },
                         { name: 'Akte', value: ticketData.avpsLink }
@@ -810,10 +810,10 @@ bot.on('interactionCreate', async (interaction) => {
                     const stationLogChannel = bot.channels.cache.get(targetChannelId);
                     if (stationLogChannel) {
                         const stationEmbed = new EmbedBuilder()
-                            .setTitle(`Neues Gutachten für ${ticketData.patient}`)
+                            .setTitle(`Behandlung von ${ticketData.patient}`)
                             .setColor(0x480007)
                             .addFields([
-                                { name: 'Name des Gutachters', value: ticketData.acceptedBy },
+                                { name: 'Name:', value: ticketData.acceptedBy },
                                 { name: 'Grund', value: reasonMapping ? reasonMapping.displayName : ticketData.grund },
                                 { name: 'Akte', value: ticketData.avpsLink }
                             ]);
@@ -1065,7 +1065,12 @@ bot.on('interactionCreate', async (interaction) => {
                 .setTitle('Preis festlegen')
                 .addComponents(
                     new ActionRowBuilder().addComponents(
-                        new TextInputBuilder().setCustomId('preis_input').setLabel('Preis (in €)').setStyle(TextInputStyle.Short).setRequired(true)
+                        new TextInputBuilder()
+                            .setCustomId('preis_input')
+                            .setLabel('Preis (in €)')
+                            .setStyle(TextInputStyle.Short)
+                            .setRequired(false)
+                            .setPlaceholder('Leer lassen, um Preis zu löschen')
                     )
                 );
             await interaction.showModal(modal);
@@ -1077,32 +1082,48 @@ bot.on('interactionCreate', async (interaction) => {
             const ticketData = ticketDataStore.get(interaction.channel.id);
             if (!ticketData) {
                 console.error(`(Bot) Ticket-Daten für Kanal ${interaction.channel.id} nicht gefunden bei set_preis_modal.`);
-                await interaction.channel.send('Ticket-Daten nicht gefunden.');
+                await interaction.followUp({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
                 return;
             }
 
             const preis = interaction.fields.getTextInputValue('preis_input')?.trim();
-            if (!preis || isNaN(parseInt(preis))) {
-                await interaction.channel.send('Ein gültiger Preis ist erforderlich.');
+            if (!preis) {
+                ticketData.preis = null; // Leerer Preis löscht den Preis
+            } else if (isNaN(parseFloat(preis)) || parseFloat(preis) < 0) {
+                await interaction.followUp({ content: 'Bitte gib einen gültigen Preis ein (z. B. 100 oder 99.99).', ephemeral: true });
                 return;
+            } else {
+                ticketData.preis = parseFloat(preis).toFixed(2); // Speichere Preis als Zahl mit 2 Dezimalstellen
             }
 
-            ticketData.preis = preis;
             saveTicketData();
 
             await updateEmbedMessage(interaction.channel, ticketData);
             await updateChannelName(interaction.channel, ticketData);
-            await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Preis festgelegt: ${formatPrice(preis)}`);
+            await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Preis ${preis ? 'festgelegt: ' + formatPrice(preis) : 'gelöscht'}.`);
             return;
         }
 
         if (interaction.isButton() && interaction.customId === 'edit_preis_button') {
+            const ticketData = ticketDataStore.get(interaction.channel.id);
+            if (!ticketData) {
+                console.error(`(Bot) Ticket-Daten für Kanal ${interaction.channel.id} nicht gefunden bei edit_preis_button.`);
+                await interaction.reply({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
+                return;
+            }
+
             const modal = new ModalBuilder()
                 .setCustomId('edit_preis_modal')
                 .setTitle('Preis bearbeiten')
                 .addComponents(
                     new ActionRowBuilder().addComponents(
-                        new TextInputBuilder().setCustomId('preis_input').setLabel('Neuer Preis (in €)').setStyle(TextInputStyle.Short).setRequired(true)
+                        new TextInputBuilder()
+                            .setCustomId('preis_input')
+                            .setLabel('Neuer Preis (in €)')
+                            .setStyle(TextInputStyle.Short)
+                            .setRequired(false)
+                            .setValue(ticketData.preis ? ticketData.preis.toString() : '')
+                            .setPlaceholder('Leer lassen, um Preis zu löschen')
                     )
                 );
             await interaction.showModal(modal);
@@ -1114,22 +1135,25 @@ bot.on('interactionCreate', async (interaction) => {
             const ticketData = ticketDataStore.get(interaction.channel.id);
             if (!ticketData) {
                 console.error(`(Bot) Ticket-Daten für Kanal ${interaction.channel.id} nicht gefunden bei edit_preis_modal.`);
-                await interaction.channel.send('Ticket-Daten nicht gefunden.');
+                await interaction.followUp({ content: 'Ticket-Daten nicht gefunden.', ephemeral: true });
                 return;
             }
 
             const preis = interaction.fields.getTextInputValue('preis_input')?.trim();
-            if (!preis || isNaN(parseInt(preis))) {
-                await interaction.channel.send('Ein gültiger Preis ist erforderlich.');
+            if (!preis) {
+                ticketData.preis = null; // Leerer Preis löscht den Preis
+            } else if (isNaN(parseFloat(preis)) || parseFloat(preis) < 0) {
+                await interaction.followUp({ content: 'Bitte gib einen gültigen Preis ein (z. B. 100 oder 99.99).', ephemeral: true });
                 return;
+            } else {
+                ticketData.preis = parseFloat(preis).toFixed(2); // Speichere Preis als Zahl mit 2 Dezimalstellen
             }
 
-            ticketData.preis = preis;
             saveTicketData();
 
             await updateEmbedMessage(interaction.channel, ticketData);
             await updateChannelName(interaction.channel, ticketData);
-            await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Preis bearbeitet: ${formatPrice(preis)}`);
+            await interaction.channel.send(`[${getTimestamp()}] ${interaction.user} hat den Preis ${preis ? 'bearbeitet: ' + formatPrice(preis) : 'gelöscht'}.`);
             return;
         }
 
