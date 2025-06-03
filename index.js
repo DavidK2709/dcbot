@@ -220,21 +220,21 @@ const createEmbedFields = (ticketData) => {
         { name: 'Sonstiges', value: ticketData.sonstiges || 'Nicht angegeben' }
     );
 
-    // Display completed appointments (original + follow-ups)
-    if (ticketData.followupAppointments && ticketData.followupAppointments.length > 0) {
-        ticketData.followupAppointments.forEach((appt, index) => {
-            fields.push({
-                name: index === 0 ? 'Termin' : `Termin ${index + 1}`,
-                value: `${appt.date} - ${appt.time}`
-            });
-        });
-    }
-
-    // Display active appointment if exists and no follow-up appointments yet
-    if (ticketData.appointmentDate && ticketData.appointmentTime && !ticketData.appointmentCompleted && (!ticketData.followupAppointments || ticketData.followupAppointments.length === 0)) {
+    // Nur aktiven Termin anzeigen, wenn er existiert und nicht abgeschlossen ist
+    if (ticketData.appointmentDate && ticketData.appointmentTime && !ticketData.appointmentCompleted) {
         fields.push({
             name: 'Termin',
             value: `${ticketData.appointmentDate} - ${ticketData.appointmentTime}`
+        });
+    }
+
+    // Abgeschlossene Termine (followupAppointments) anzeigen
+    if (ticketData.followupAppointments && ticketData.followupAppointments.length > 0) {
+        ticketData.followupAppointments.forEach((appt, index) => {
+            fields.push({
+                name: `Termin ${index + 1}`,
+                value: `${appt.date} - ${appt.time}`
+            });
         });
     }
 
@@ -251,8 +251,6 @@ const createEmbedFields = (ticketData) => {
 
     return fields;
 };
-
-
 
 const updateEmbedMessage = async (channel, ticketData) => {
     try {
