@@ -300,6 +300,7 @@ const loadTicketData = async (bot) => {
         }
         console.log('Ticket-Daten erfolgreich geladen.');
 
+        const ticketsToRemove = [];
         for (const [channelId, ticketData] of ticketDataStore) {
             try {
                 const channel = bot.channels.cache.get(channelId);
@@ -308,12 +309,22 @@ const loadTicketData = async (bot) => {
                     await updateChannelName(channel, ticketData);
                     console.log(`(Bot) Embed und Kanalname für Ticket ${channelId} aktualisiert.`);
                 } else {
-                    console.log(`(Bot) Kanal ${channelId} nicht gefunden, überspringe Aktualisierung.`);
+                    console.log(`(Bot) Kanal ${channelId} nicht gefunden, archiviere Ticket in error_tickets.json.`);
+                    archiveErrorTicket(channelId, ticketData);
+                    ticketsToRemove.push(channelId);
                 }
             } catch (err) {
                 console.error(`(Bot) Fehler beim Aktualisieren von Ticket ${channelId}:`, err);
+                archiveErrorTicket(channelId, ticketData);
+                ticketsToRemove.push(channelId);
             }
         }
+
+        // Entferne archivierte Tickets aus ticketDataStore
+        for (const channelId of ticketsToRemove) {
+            ticketDataStore.delete(channelId);
+        }
+        saveTicketData();
     } catch (err) {
         console.error('Fehler beim Laden von tickets.json:', err);
         ticketDataStore.clear();
@@ -337,6 +348,31 @@ const archiveTicketData = (channelId, data) => {
     archivedTickets.push({ channelId, data, archivedAt: new Date().toISOString() });
     fs.writeFileSync('archive_tickets.json', JSON.stringify(archivedTickets, null, 2));
     console.log(`(Bot) Ticket ${channelId} erfolgreich in archive_tickets.json archiviert.`);
+};
+
+const archiveErrorTicket = (channelId, ticketData) => {
+    let errorTickets = [];
+    try {
+        if (fs.existsSync('error_tickets.json')) {
+            const errorData = fs.readFileSync('error_tickets.json', 'utf8');
+            errorTickets = JSON.parse(errorData);
+            if (!Array.isArray(errorTickets)) {
+                console.error('(Bot) Ungültiges Format in error_tickets.json, initialisiere als leeres Array.');
+                errorTickets = [];
+            }
+        }
+    } catch (err) {
+        console.error('(Bot) Fehler beim Laden von error_tickets.json:', err);
+        errorTickets = [];
+    }
+
+    errorTickets.push({ channelId, data: ticketData, archivedAt: new Date().toISOString() });
+    try {
+        fs.writeFileSync('error_tickets.json', JSON.stringify(errorTickets, null, 2));
+        console.log(`(Bot) Ticket ${channelId} erfolgreich in error_tickets.json archiviert.`);
+    } catch (err) {
+        console.error('(Bot) Fehler beim Speichern von error_tickets.json:', err);
+    }
 };
 
 // === BOT CLIENT ===
@@ -649,7 +685,7 @@ bot.on('interactionCreate', async (interaction) => {
             return;
         }
 
-        if (interaction.isButton() && interaction.customId === 'close_ticket_button') {
+          if (interaction.isButton() && interaction.customId === 'close_ticket_button') {
             await interaction.deferUpdate();
             const ticketData = ticketDataStore.get(interaction.channel.id);
             if (!ticketData) {
