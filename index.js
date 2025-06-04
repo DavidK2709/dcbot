@@ -628,9 +628,12 @@ bot.on('interactionCreate', async (interaction) => {
                 { id: departmentConfig.memberRoleId, allow: ['ViewChannel', 'SendMessages'] }
             ];
 
-            CONFIG.rettungsdienst_rollen.forEach(roleId => {
-                permissionOverwrites.push({ id: roleId, allow: ['ViewChannel', 'SendMessages'] });
-            });
+            // Nur für nicht-automatische Tickets Rettungsdienst-Berechtigungen setzen
+            if (!reasonMapping) {
+                CONFIG.rettungsdienst_rollen.forEach(roleId => {
+                    permissionOverwrites.push({ id: roleId, allow: ['ViewChannel', 'SendMessages'] });
+                });
+            }
 
             CONFIG.ADMIN_ROLES.forEach(roleId => {
                 permissionOverwrites.push({ id: roleId, allow: ['ViewChannel', 'SendMessages'] });
@@ -645,7 +648,7 @@ bot.on('interactionCreate', async (interaction) => {
                 name: channelName,
                 type: 0,
                 parent: departmentConfig.categoryId,
-                permissionOverwrites: permissionOverwrites
+                permissionOverwrites
             });
 
             const data = {
