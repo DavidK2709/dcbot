@@ -622,7 +622,7 @@ bot.on('interactionCreate', async (interaction) => {
                 await interaction.editReply({ content: `Ungültige Abteilung: ${abteilung}`, ephemeral: true });
                 return;
             }
-            const reasonMapping = CONFIG.TICKET_REASONS[grund];
+
             const permissionOverwrites = [
                 { id: interaction.guild.id, deny: ['ViewChannel'] },
                 { id: departmentConfig.memberRoleId, allow: ['ViewChannel', 'SendMessages'] }
