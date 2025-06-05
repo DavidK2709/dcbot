@@ -76,9 +76,9 @@ const retryOnRateLimit = async (operation, maxRetries = 3, delay = 10000) => {
 const findUserInGuild = async (guild, input) => {
     try {
         const members = await guild.members.fetch();
-        const cleanInput = input.trim();
-        let member;
+        const cleanInput = input.trim().replace(/\s+/g, '-').toLowerCase(); // Leerzeichen durch Bindestriche ersetzen und in Kleinbuchstaben
 
+        let member;
         const isNumber = /^\d+$/.test(cleanInput);
         if (isNumber) {
             const formattedNumber = cleanInput.padStart(2, '0');
@@ -89,7 +89,7 @@ const findUserInGuild = async (guild, input) => {
             return member ? { mention: `<@${member.user.id}>`, nickname: member.displayName } : { mention: cleanInput, nickname: cleanInput };
         }
 
-        member = members.find(m => m.displayName.replace(/\[[\d+]\]\s*/g, '').toLowerCase() === cleanInput.toLowerCase());
+        member = members.find(m => m.displayName.replace(/\[[\d+]\]\s*/g, '').replace(/\s+/g, '-').toLowerCase() === cleanInput);
         return member ? { mention: `<@${member.user.id}>`, nickname: member.displayName } : { mention: cleanInput, nickname: cleanInput };
     } catch (err) {
         console.error(`(Bot) Fehler in findUserInGuild für Guild ${guild.id}:`, err);
@@ -107,9 +107,11 @@ const formatPrice = (price) => {
 const getChannelName = (ticketData) => {
     const reasonMapping = CONFIG.TICKET_REASONS[ticketData.grund];
     const isAutomaticTicket = reasonMapping && Object.keys(CONFIG.TICKET_REASONS).includes(ticketData.grund);
+    const formattedPatient = ticketData.patient ? ticketData.patient.replace(/\s+/g, '-').toLowerCase() : 'unknown';
+    const formattedGrund = ticketData.grund ? ticketData.grund.replace(/\s+/g, '-').toLowerCase() : 'unknown';
     const baseName = isAutomaticTicket
-        ? `${reasonMapping.internalKey.split('-').slice(0, -1).join('-')}-${ticketData.patient.replace(/ /g, '-')}`
-        : `${ticketData.patient.replace(/ /g, '-')}-${ticketData.grund.replace(/ /g, '-')}`;
+        ? `${reasonMapping.internalKey.split('-').slice(0, -1).join('-')}-${formattedPatient}`
+        : `${formattedPatient}-${formattedGrund}`;
     const symbol = ticketData.isClosed ? '🔒' : '🕓';
     return `${symbol} ${baseName}`.slice(0, 100);
 };
