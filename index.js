@@ -616,6 +616,7 @@ bot.on('interactionCreate', async (interaction) => {
                 await interaction.editReply({ content: 'Grund, Patient und Telefon sind erforderlich.', ephemeral: true });
                 return;
             }
+            const reasonMapping = CONFIG.TICKET_REASONS[grund];
 
             const departmentConfig = CONFIG.DEPARTMENTS[abteilung];
             if (!departmentConfig) {
@@ -662,7 +663,7 @@ bot.on('interactionCreate', async (interaction) => {
                 preis: null, followupAppointments: []
             };
 
-            const reasonMapping = CONFIG.TICKET_REASONS[grund];
+
             if (reasonMapping) {
                 data.preis = reasonMapping.preis;
             }
