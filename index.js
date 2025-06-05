@@ -113,7 +113,7 @@ const getChannelName = (ticketData) => {
         ? `${reasonMapping.internalKey.split('-').slice(0, -1).join('-')}-${formattedPatient}`
         : `${formattedPatient}-${formattedGrund}`;
     const symbol = ticketData.isClosed ? '🔒' : '🕓';
-    return `${symbol} ${baseName}`.slice(0, 100);
+    return `${symbol}-${baseName}`.slice(0, 100);
 };
 
 const updateChannelName = async (channel, ticketData) => {
