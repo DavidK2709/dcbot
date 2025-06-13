@@ -1,0 +1,108 @@
+[
+  {
+    "channelId": "1381309311078367345",
+    "data": {
+      "abteilung": "Arbeitsmedizin",
+      "grund": "ticket_arbeitsmedizinisches_pol",
+      "patient": "Swift Dave",
+      "telefon": "01726 12345",
+      "sonstiges": "22 - 23 Uhr",
+      "abteilungPing": "<@&1378976857470406706>",
+      "buttonMessageId": null,
+      "appointmentMessageId": null,
+      "completedMessageId": null,
+      "avpsMessageId": null,
+      "embedMessageId": "1381309313116536947",
+      "appointmentDate": null,
+      "appointmentTime": null,
+      "originalAppointmentDate": null,
+      "originalAppointmentTime": null,
+      "acceptedBy": "<@268116579210756097>",
+      "avpsLink": "testr",
+      "appointmentCompleted": true,
+      "isClosed": true,
+      "lastReset": false,
+      "callAttempt": false,
+      "preis": "5000",
+      "followupAppointments": [
+        {
+          "date": "08.06.2025",
+          "time": "18:30"
+        }
+      ],
+      "nickname": "David"
+    },
+    "archivedAt": "2025-06-08T16:32:17.094Z"
+  },
+  {
+    "channelId": "1381312812017782895",
+    "data": {
+      "abteilung": "Arbeitsmedizin",
+      "grund": "ticket_arbeitsmedizinisches_mediziner",
+      "patient": "Swift Dave",
+      "telefon": "01726 12345",
+      "sonstiges": "22 - 23 Uhr",
+      "abteilungPing": "<@&1378976857470406706>",
+      "buttonMessageId": null,
+      "appointmentMessageId": null,
+      "completedMessageId": null,
+      "avpsMessageId": null,
+      "embedMessageId": "1381312813108166769",
+      "appointmentDate": null,
+      "appointmentTime": null,
+      "originalAppointmentDate": null,
+      "originalAppointmentTime": null,
+      "acceptedBy": "<@268116579210756097>",
+      "avpsLink": "test",
+      "appointmentCompleted": true,
+      "isClosed": true,
+      "lastReset": false,
+      "callAttempt": false,
+      "preis": "0",
+      "followupAppointments": [
+        {
+          "date": "08.06.2025",
+          "time": "18:44"
+        }
+      ],
+      "nickname": "David"
+    },
+    "archivedAt": "2025-06-08T16:44:59.634Z"
+  },
+  {
+    "channelId": "1381715127329489048",
+    "data": {
+      "abteilung": "Arbeitsmedizin",
+      "grund": "Swift",
+      "patient": "S",
+      "telefon": "01726",
+      "sonstiges": "DS",
+      "abteilungPing": "<@&1378976857470406706>",
+      "createdBy": "<@924473826497167360>",
+      "buttonMessageId": null,
+      "appointmentMessageId": null,
+      "completedMessageId": null,
+      "avpsMessageId": null,
+      "embedMessageId": "1381715129204211792",
+      "appointmentDate": null,
+      "appointmentTime": null,
+      "originalAppointmentDate": null,
+      "originalAppointmentTime": null,
+      "acceptedBy": "8",
+      "avpsLink": "dd",
+      "appointmentCompleted": true,
+      "isClosed": true,
+      "lastReset": false,
+      "callAttempt": false,
+      "preis": null,
+      "followupAppointments": [
+        {
+          "date": "09.06.2025",
+          "time": "21:23"
+        }
+      ],
+      "nickname": "8"
+    },
+    "archivedAt": "2025-06-09T19:27:51.566Z"
+  }
+]
